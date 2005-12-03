@@ -1,0 +1,368 @@
+<?xml version="1.0"?>
+<!-- document DTD, userexitd does NOT use it, so you are free to delete it -->
+<!-- however it may be useful for XML editors, both programs and humans    -->
+<!-- START OF document DTD -->
+<!DOCTYPE userexitd [
+<!ATTLIST listen        address         CDATA                   #REQUIRED>
+<!ELEMENT listen        EMPTY>
+<!ATTLIST logging       level
+        (emerg|alert|crit|err|warning|notice|info|debug)        #REQUIRED>
+<!ELEMENT logging       EMPTY>
+<!ELEMENT foreground    EMPTY>
+<!ELEMENT background    EMPTY>
+<!ATTLIST syslog        ident           CDATA                   #IMPLIED>
+<!ATTLIST syslog        priority
+        (emerg|alert|crit|err|warning|notice|info|debug)        #IMPLIED>
+<!ATTLIST syslog        facility
+        (auth|authpriv|cron|daemon|ftp|kern|lpr|mail|mark|news|security|syslog|user|uucp|local0|local1|local2|local3|local4|local5|local6|local7)         #IMPLIED>
+<!ELEMENT syslog        (#PCDATA)>
+<!ATTLIST pattern       type
+(event|eventNum|sevCode|applType|sessId|version|eventType|timeStamp|serverName|nodeName|commMethod|ownerName|hlAddress|llAddress|schedName|domainName) #REQUIRED>
+<!ELEMENT pattern       (#PCDATA)>
+<!ELEMENT arg           (#PCDATA)>
+<!ATTLIST file          fd              CDATA                   #REQUIRED>
+<!ATTLIST file          mode            CDATA                   #REQUIRED>
+<!ATTLIST file          filename        CDATA                   #IMPLIED>
+<!ATTLIST file          dup             CDATA                   #IMPLIED>
+<!ELEMENT file          (#PCDATA)>
+<!ATTLIST exec          image           CDATA                   #REQUIRED>
+<!ELEMENT exec          (arg*,file*)>
+<!ELEMENT command	(#PCDATA)>
+<!ELEMENT input 	(#PCDATA)>
+<!ELEMENT system	(command,input?)>
+<!ATTLIST rule          name            CDATA                   #REQUIRED>
+<!ATTLIST rule          disabled        (yes|no)                #IMPLIED>
+<!ATTLIST rule          final           (yes|no)                #IMPLIED>
+<!ATTLIST pid		path		CDATA			#REQUIRED>
+<!ELEMENT pid 		EMPTY>
+<!ELEMENT rule          (pattern+,syslog*,exec*,system*)>
+<!ELEMENT config        (listen?,syslog?,logging?,pid?,(foreground|background)?)>
+<!ELEMENT rules         (rule+)>
+<!ELEMENT userexitd     (config?,rules)>
+]>
+<!-- END OF document DTD -->
+
+<!-- one userexitd element per config file -->
+<userexitd>
+ <!-- 	Global configuration.
+  	this section and all it's subelements are 
+	optional and may be absent. Compile-time defaults exist.
+ -->
+ <config>
+  <!-- 	Address to listen to. Only unix datagram sockets currently supported      -->
+  <!--  userexit.so uses an enviroment variable instead, set it to the same value -->
+  <listen address="unix:/var/run/userexitd.sock"/>
+
+  <!-- 	default syslog settings. Standard syslog facilities and priorities 
+    	are used (see syslog.conf(5) for details) -->
+  <syslog ident="TSMLOG" facility="local2" priority="debug"/>
+
+  <!-- 	program logging level -->
+  <logging level="info"/>
+
+  <!-- 	pid file to create, use empty path value
+  	to disable pid file creation -->
+  <pid path="/var/run/userexitd.pid"/>
+
+  <!-- use foreground or background element to set execution mode. The latter is default -->
+  <foreground/>
+
+ </config>
+
+ <!-- 	The <rules> section contains one or more rules. Userexitd scans rules from top to bottom
+      	and runs actions of matching rules. Rules with "final" attribute set to "yes" stop 
+      	matching. Rules with "disabled" attribute set to "yes" are skipped.
+
+     	Each rule contains one or more <pattern> element. Rule matches only if all of it's patterns match.
+
+	Each pattern must have "type" attribute set to one of the following values 
+		(they are the field names of TSM messages, see userExitSample.h in 
+		 the TSM server directory for details)
+		event, eventNum, sevCode, applType, sessId, version, eventType, timeStamp, 
+		serverName, nodeName, commMethod, ownerName, hlAddress, llAddress, schedName, domainName
+	
+	event	-	contains full text of TSM event, most useful field to match
+	eventNum	numeric code for event (four digits)
+	sevCode		severity code, one of these:
+		ADSM_SEV_INFO		- 	Informational message
+  		ADSM_SEV_WARNING	-       Warning message
+  		ADSM_SEV_ERROR		-       Error message
+  		ADSM_SEV_SEVERE	 	-       Severe error message
+  		ADSM_SEV_DIAGNOSTIC  	-  	Diagnostic message
+  		ADSM_SEV_TEXT 		-	Text message
+	applType	one of these: 
+		ADSM_APPL_BACKARCH, ADSM_APPL_HSM, ADSM_APPL_API, ADSM_APPL_SERVER
+	sessId		session number
+	version		version number of message structure (2)
+	eventType	one of these: 	ADSM_SERVER_EVENT, ADSM_CLIENT_EVENT
+	timeStamp	time stamp of event
+	serverName	name of TSM server
+	nodeName	node name for session
+	commMethod	communication method
+	ownerName	owner
+	hlAddress	high-level address (usually IP address)
+	llAddress	low-level address  (usually TCP port)
+ 	schedName	name of schedule
+	domainName	domain name for node
+
+	Each pattern contains a POSIX regular expression, see regex(7) manpage.
+
+	Each rule contains zero or more actions (<syslog>, <exec> or <system> elements)
+
+	<exec> action executes the program, specified in it's "image" attribute. 
+	You can specify arguments using <arg> subelement. 
+
+	You can redirect program's input, output and error streams using <file> subelement. 
+	It's "fd" attribute sets number of file descriptor to redirect, it's value may be 
+	numeric or one of "stdin", "stdout" or "stderr". 
+	"mode" attribute defines how to open this file, may be one of "r", "r+", "w", "w+", "a", "a+" 
+	(see fopen(3) for details). 
+	"dup" attribute allows to duplicate existing file descriptor, it's value may be
+        numeric or one of "stdin", "stdout" or "stderr"
+	If file is opened for reading (mode="r") and no "filename" nor dup "attributes" are set,
+	the contents of <file> element are redirected (with variable substitution)
+
+	<system> action uses the system shell (/bin/sh) to execute contents
+	of it's command subelement (with variable substitution). If <input> element 
+	is specified, the command uses contents of  <input> element (with variable
+	substitution) as it's standard input. Because of security concerns, it is
+	better to use <exec> element if argument substitution is required.
+
+	<syslog> action writes it's contents (with variable substitution) into 
+	the system log. Standard syslog facilities and priorities
+        are used (see syslog.conf(5) for details)
+
+	Variable substitution works for contents of <arg>, <command>, <input>, <file> and
+	<syslog> elements. Variables may be referenced using %varName% notation. %% inserts
+	a single %. The following variables are supported:
+		%0%	    -   last matched expression
+		%1% - %20%  - 	n-th matched parethesized subexpression from last 
+				matched expression
+		%fieldName% -	value of a field of TSM message (see pattern type)
+
+ -->
+ <rules>
+  <!-- VARIOUS MEDIA RELATED REQUESTS -->
+  <rule name="ANR8308I" disabled="no">
+  <!-- bug operator every 10 minutes to checkin volume starting with 5th minute-->
+        <pattern type="event">^ANR8308I ([0-9]+): ([^ ]+) volume ([^ ]+) is required for use in library ([^ ]+); CHECKIN LIBVOLUME required within ([0-9]?[0-9]?5) .*</pattern>
+        <exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>MEDIA REQUEST for %3%</arg>
+                <arg>operator</arg>
+		<file fd="0" mode="r">
+TSM media request:
+%0%
+		</file>
+		<file fd="2" mode="a" filename="/dev/null"/>
+        </exec>
+  </rule>
+  <rule name="ANR8373I" disabled="no">
+  <!-- the similar thing using system instead of exec -->
+	<pattern type="event">^ANR8373I ([0-9]+): Fill the bulk entry/exit port of library ([^ ]+) with all ([^ ]+) volumes to be processed within ([0-9]?[0-9]?5) .*</pattern>
+	<system>
+		<command>mail -s "MEDIA REQUEST" operator</command>
+		<input>
+TSM media request:
+%0%
+		</input>
+	</system>
+  </rule>
+  <rule name="ANR8326I" disabled="no">
+	<pattern type="event">^ANR8326I ([0-9]+): Mount ([^ ]*) volume ([^ ]*) [^ ]+ in drive ([^ ]+)( [^ ]+)? of library ([^ ]+) within ([0-9]?[0-9]?5) minutes.</pattern>
+        <exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>MEDIA REQUEST for %3%</arg>
+                <arg>operator</arg>
+		<file fd="stdin" mode="r">
+TSM media request:
+%0%
+		</file>
+	</exec>
+  </rule>
+
+<!-- INCORRECT VOLUME ERROR -->
+  <rule name="ANR8354E" disabled="no">
+   <pattern type="event">^ANR8354E ([0-9]+): Incorrect volume ([^ ]+) mounted in drive</pattern>
+        <exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>TSM Incorrect volume error</arg>
+                <arg>operator</arg>
+		<file fd="stdin"  mode="r">
+TSM error:
+%0%
+		</file>
+	</exec>
+  </rule>
+
+
+<!-- CANCELED AND TIMED OUT REQUESTS -->
+  <rule name="ANR8342I" disabled="no">
+	<pattern type="event">^ANR8342I Request ([0-9]+) for volume ([^ ]*) canceled by.*</pattern>
+	<!-- let us use sendmail this time -->
+        <exec image="/usr/sbin/sendmail">
+                <arg>operator</arg>
+		<file fd="stdin"  mode="r">Subject: media request for %2% was canceled
+To: operator
+
+TSM information:
+%0%
+		</file>
+	</exec>
+  </rule>
+  <rule name="ANR8351E">
+	<pattern type="event">^ANR8351E ([0-9]+): Mount request for volume ([^ ]*) has timed out.*</pattern>
+        <exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>TSM media request for %2% timed out</arg>
+                <arg>operator</arg>
+		<file fd="stdin"  mode="r">
+TSM error:
+%0%
+		</file>
+	</exec>
+  </rule>
+
+  <rule name="ANR8372I" disabled="no">
+	<pattern type="event">^ANR8372I ([0-9]+): Remove ([^ ]+) volume ([^ ]+) from drive ([^ ]+).*</pattern>
+	<exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>Please remove volume %3%</arg>
+                <arg>operator</arg>
+                <file fd="stdin"  mode="r">
+TSM information:
+%0%
+                </file>
+        </exec>
+
+  </rule>
+<!-- must be ejected manually -->
+  <rule name="ANR8317I" disabled="no">
+	<pattern type="event">^ANR8317I The volume in ([^ ]+).*</pattern>
+	<exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>Please remove volume</arg>
+                <arg>operator</arg>
+                <file fd="stdin"  mode="r">
+TSM information:
+%0%
+                </file>
+        </exec>
+  </rule>
+
+<!-- run script to zip and replicate TSM database backups -->
+<!-- stdout and stderr redirected to logfile              -->
+<rule name="DBBackupVolumeClosed" disabled="no">
+   <pattern type="event">^ANR0515I Process ([0-9]+) closed volume ((/tsm1/VTAPE_DB_INC|/tsm1/VTAPE_DB_FULL)/[^ ]+)</pattern>
+    <exec image="/usr/local/sbin/backuptsmdb.sh">
+	<file fd="stderr" mode="a" filename="/var/log/backuptsmdb.log"/>
+	<file fd="stdout" mode="a" dup="stderr"/>
+    </exec>
+</rule>
+
+<!--VARIOUS MINOR ERRORS -->
+<!-- want reclamation errors -->
+  <rule name="ReclamationFailure" final="yes">
+    <pattern type="event">^ANR0985I Process ([0-9]+) for (SPACE RECLAMATION) running in the (.*) completed with completion state FAILURE at .*</pattern>
+	<exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>Reclamation error</arg>
+                <arg>operator</arg>
+                <file fd="stdin" mode="r">
+TSM informational message:
+%0%
+                </file>
+        </exec>
+  </rule>
+
+
+<!-- failed and missing schedules -->
+<rule name="SCHEDULE_FAILED">
+   <pattern type="event">^ANR2579E Schedule ([^ ]+) in domain ([^ ]+) for node ([^ ]+) failed \(return code ([0-9]+)\).*</pattern>
+	<exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>Client schedule %1%/%2% on node %3% failed</arg>
+                <arg>operator</arg>
+                <file fd="stdin"  mode="r">
+TSM error message:
+%0%
+                </file>
+        </exec>
+   </rule>
+   <rule name="SCHEDULE_MISSED">
+   <pattern type="event">^ANR2578W Schedule ([^ ]+) in domain ([^ ]+) for node ([^ ]+) has missed its scheduled start up window.*</pattern>
+	<exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>Client schedule %1%/%2% on node %3% missed</arg>
+                <arg>operator</arg>
+                <file fd="stdin" mode="r">
+TSM error message:
+%0%
+                </file>
+        </exec>
+   </rule>
+
+   <rule name="ADMINISTRATIVE_SCHEDULE_FAILED">
+   <pattern type="event">^ANR2752E Scheduled command ([^ ]+) failed.*</pattern>
+	<exec image="/usr/bin/mail">
+                <arg>-s</arg><arg>Administrative schedule %1% failed</arg>
+                <arg>operator</arg>
+                <file fd="stdin"  mode="r">
+TSM error message:
+%0%
+                </file>
+        </exec>
+   </rule>
+
+<!-- this rule is final rule: 
+     I do not want traps for CLI syntax errors, missed TCP connection, session timeouts, etc
+-->
+<rule name="BOGUS_ERRORS" final="yes">
+    <pattern type="event">(^ANR2305E|^ANR2000E|^ANR2034E|^ANR8366E|^ANR8209E|^ANR2021E).*</pattern>
+</rule>
+<rule name="BOGUS_WARNINGS" final="yes">
+    <pattern type="event">(^ANR0482W).*</pattern>
+</rule>
+
+<rule name="BOGUS_INFO" final="yes">
+    <pattern type="event">(^ANR2017I).*</pattern>
+</rule>
+
+<!-- informational messages to syslog -->
+<rule name="SYSLOG_INFO" disabled="no">
+        <pattern type="sevCode">ADSM_SEV_INFO</pattern>
+    	<syslog priority="info">%event%</syslog>
+</rule>
+
+<!-- Errors to syslog and NMS -->
+   <rule name="SYSLOG_ERROR" disabled="no">
+        <pattern type="sevCode">ADSM_SEV_ERROR</pattern>
+    	<syslog priority="err">%event%</syslog>
+	<exec image="/usr/bin/snmptrap">
+		<arg>-v</arg><arg>1</arg>
+		<arg>-c</arg><arg>public</arg>
+		<arg>nms</arg><arg>1.3.6.1.4.1.2.6.135.0</arg><arg>%serverName%%</arg>
+		<arg>6</arg><arg>3</arg><arg></arg>
+		<arg>1.3.6.1.4.1.2.6.135.1.1.1.8</arg><arg>s</arg><arg>%event%</arg>
+   	</exec>
+   </rule>
+
+<!-- Warnings to syslog and NMS -->
+   <rule name="SYSLOG_WARN" disabled="no">
+        <pattern type="sevCode">ADSM_SEV_WARNING</pattern>
+    	<syslog priority="warning">%event%</syslog>
+	<exec image="/usr/bin/snmptrap">
+		<arg>-v</arg><arg>1</arg>
+		<arg>-c</arg><arg>public</arg>
+		<arg>nms</arg><arg>1.3.6.1.4.1.2.6.135.0</arg><arg>%serverName%</arg>
+		<arg>6</arg><arg>2</arg><arg></arg>
+		<arg>1.3.6.1.4.1.2.6.135.1.1.1.8</arg><arg>s</arg><arg>%event%</arg>
+   	</exec>
+   </rule>
+
+<!-- Severe errors to syslog and NMS -->
+   <rule name="SYSLOG_CRIT" disabled="no">
+        <pattern type="sevCode">ADSM_SEV_SEVERE</pattern>
+    	<syslog priority="crit">%event%</syslog>
+	<exec image="/usr/bin/snmptrap">
+		<arg>-v</arg><arg>1</arg>
+		<arg>-c</arg><arg>public</arg>
+		<arg>nms</arg><arg>1.3.6.1.4.1.2.6.135.0</arg><arg>%serverName%</arg>
+		<arg>6</arg><arg>1</arg><arg></arg>
+		<arg>1.3.6.1.4.1.2.6.135.1.1.1.8</arg><arg>s</arg><arg>%event%</arg>
+   	</exec>
+  </rule>
+ </rules>
+</userexitd>
+

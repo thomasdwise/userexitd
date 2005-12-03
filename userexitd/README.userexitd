@@ -1,0 +1,46 @@
+		      Userexitd for TSM
+			version 0.2
+		Eugene Doudine <dudinea at gmail com>
+
+
+OVERVIEW
+
+The Userexitd software is a configurable handler for Tivoli Storage 
+Manager events. It allows administrator to filter events using regular
+expressions and run various actions for TSM events: send mail and SNMP
+traps, write messages into syslog, run various scripts and programs.
+
+This software consists of two parts: a simple shared library (userexit.so), 
+which is dynamically linked to the TSM Server as a user exit and communicates 
+using a socket with the userexitd daemon, running as a separate service.
+Userexitd does event filtering and runs actions. The daemon is 
+configured via it's configuration file (XML syntax)
+
+
+CURRENT STATUS
+
+Version 0.2 is the initial public release of this software. 
+
+Unfortunately, it is compiled and tested only on the Linux/x86 platform, 
+since currently I do not have access to TSM on other platforms. 
+Contributed ports to other platforms are welcome, as would be  
+shell access for me to do the port. 
+
+This version works for me on my test host with TSM 5.2. 
+The previous unpublished version successfully works in production.
+
+Any comments, suggestions, bug and doc fixes, usage reports are welcome.
+
+
+DOCUMENTATION
+
+The following documentation is currently available:
+
+INSTALL.userexitd  - installation and configuration instructions
+userexitd.conf.sam - sample configuration file with comments
+TODO.userexitd     - developer's TO DO list
+
+
+WHERE TO GET SOFTWARE
+
+http://userexitd.sourceforge.net

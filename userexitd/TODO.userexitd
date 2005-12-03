@@ -1,0 +1,17 @@
+TODO list for userexitd 0.2 
+(in no specific order)
+
+*Test with other TSM versions but 5.2
+*Start using autoconf
+*Implement counters
+*Port to other UNIX and Linux platforms supported by TSM
+*Build RPMS
+*Add other communication types (TCP/IP)
+*Create more useful sample configurations
+*Write more docs in better English
+*limits for subprocesses
+*Implement reloading of configuration on SIGHUP
+*Automate installation
+*Port to MS Windows (maybe)
+
+

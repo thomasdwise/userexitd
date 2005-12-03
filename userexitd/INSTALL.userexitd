@@ -1,0 +1,145 @@
+1. BUILDING USEREXITD
+
+If you've downloaded one of binary packages you can skip
+this section.
+
+1.0 Prerequisites: expat library (libexpat.a), TSM server installed.
+    We do not need TSM client API, only userExitSample.h and 
+    userExitSample.c from the server distribution. 
+    Sources for userexit.so shared library are derived from the sample
+    (userExitSample.c), which does not seem to have a free license.
+    Therefore I distribute patch (userexit.patch) to make userexit.c
+    from IBM's userExitSample.c code.  
+
+    untar the distribution tarball (you probably did it, since
+    you're reading this :-)
+
+	$ tar -xvzf userexitd-VERSION-src.tar.gz
+
+    change to distribution directory
+
+	$ cd userexitd-VERSION
+
+1.1 edit the Makefile to reflext the location of your TSM instance 
+    (only if your TSM server instance is not installed
+    in it's default location /opt/tivoli/tsm/server/bin) 
+
+
+1.2 run make (only GNU make tested)
+	
+	$ make 
+        [ -f userexit.c ] || patch  -o userexit.c /opt/tivoli/tsm/server/bin/userExitSample.c userexit.patch
+	patching file /opt/tivoli/tsm/server/bin/userExitSample.c
+	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall -DDEFSOCKET=\"unix:/var/run/userexitd.sock\" -I/opt/tivoli/tsm/server/bin -c -o userexit.o userexit.c
+	ld -o userexit.so -shared -E userexit.o
+	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall -DUSEREXITD_VERSION=\"0.2\" -D_POSIX_SOURCE -DDEFAULTSOCKET=\"unix:/var/run/userexitd.sock\" -DDEFAULTPIDFILE=\"/var/run/userexitd.pid\" -DDEFINDENT=\"TSM\" -DDEFCFG=\"/opt/tivoli/tsm/server/bin/userexitd.conf\"  -I/opt/tivoli/tsm/server/bin -c -o userexitd.o  userexitd.c
+	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall -DUSEREXITD_VERSION=\"0.2\" -D_POSIX_SOURCE -DDEFAULTSOCKET=\"unix:/var/run/userexitd.sock\" -DDEFAULTPIDFILE=\"/var/run/userexitd.pid\" -DDEFINDENT=\"TSM\" -DDEFCFG=\"/opt/tivoli/tsm/server/bin/userexitd.conf\"  -DSYSLOG_NAMES -I/opt/tivoli/tsm/server/bin -c -o utils.o  utils.c
+	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall   -o userexitd userexitd.o utils.o /usr/lib/libexpat.a
+        $
+
+	Now we have built the userexit.so and userexitd binaries. Go to 2.1  
+
+
+2. INSTALLING USEREXITD AND USEREXIT.SO
+	
+2.0 	Prerequisites to install from binary package: TSM server installed. 
+
+	Untar the binary distribution (you probably did it, since you're 
+	reading this :-)
+
+	$ tar -xvzf userexitd-VERSION-OS-CPU.tar.gz
+	
+	change to distribution directory
+
+	$ cd userexitd-VERSION
+
+        edit the Makefile to reflext the location of your TSM instance 
+        (only if your TSM server instance is not installed
+        in it's default location /opt/tivoli/tsm/server/bin) 
+
+2.1     run (probably as root) make install to install binaties and 
+	configuration sample.
+	
+	# make install
+	install -m 700 userexitd /opt/tivoli/tsm/server/bin
+	install -m 700 userexit.so /opt/tivoli/tsm/server/bin
+	install -m 700 userexitd.conf.sam /opt/tivoli/tsm/server/bin	
+	#
+
+2.2     copy userexitd.conf.sam to userexitd.conf, read comments
+	and edit userexitd.conf as you see fit.
+
+	# cp /opt/tivoli/tsm/server/bin/userexitd.conf.sam /opt/tivoli/tsm/server/bin/userexitd.conf
+
+2.3	check validity of configuration
+		
+	# /opt/tivoli/tsm/server/bin/userexitd -f
+	configuration seems to be OK!
+	#
+
+2.4     Start userexitd process in debug mode. -d parameter overrides 
+	<background/> and <logging/> settings from configuration file.
+	
+	# /opt/tivoli/tsm/server/bin/userexitd -d
+	...
+	debug: pidfile='/var/run/userexitd.pid'
+	debug: sockpath='/var/run/userexitd.sock'
+	
+	it should print lots of debugging info and stop waiting for a packet 
+	from the shared library
+
+2.5	Add the following line to your dsmserv.opt to load the shared 
+	library at server start
+
+	USEREXIT YES userexit.so
+
+	halt and start the TSM server.
+
+	when starting it should print on console
+	
+	userexit: Initializing
+	userexit: messages will go to unix:/var/run/userexitd.sock
+	userexit: initialized
+
+	The location of the socket may be set via the USEREXITD_ADDRESS
+	environment variable
+
+2.6 	Execute the following commands as TSM administrator to enable logging 
+	of ALL (you may want to change this) events to the user exit shared library
+
+	ENABLE EVENTS USEREXIT ALL
+
+	now TSM will start sending events to the userexitd daemon, you should
+	see userexitd printing debug messages as it processes events.
+
+	...
+	debug:
+	got 3404 bytes!	
+	debug: packet version: 2
+	debug: eventNum: 2017
+	...
+
+2.7	Write and debug your rules in the configuration file (see commments in the
+	configuration file)
+	Abcense of running userexitd daemon does not affect operation of TSM server.
+
+2.8	Configure automatic startup of userexitd without the debug option (-d)
+	(see your distribution administrator's guide). 
+	Probably it should start before TSM server. 
+
+
+COMMAND LINE ARGUMENTS FOR USEREXITD
+
+Usage: userexitd [-v] [-h] [-f] [-c file] [-d]
+        -c file         configuration file
+        -d              debug mode
+        -f              check configuration
+        -h              print help
+        -v              print version
+
+
+
+
+ 
+
+
