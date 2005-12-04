@@ -76,5 +76,5 @@ userexit.o: userexit.c
 	$(CC) $(CFLAGS) -DDEFSOCKET=$(DEFSOCKET) $(CC_INCLUDES) -c -o $@ $<
 
 userexit.c: 
-	[ -f userexit.c ] || patch -o userexit.c $(TSMDIR)/userExitSample.c $(PATCHNAME) 
+	[ -f userexit.c ] || patch -o userexit.c $(TSMDIR)/userExitSample.c < $(PATCHNAME) 
 
