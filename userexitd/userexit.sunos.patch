@@ -1,0 +1,338 @@
+--- /home/dudin/utsm/SUNOS/userExitSample.c	2005-12-03 02:17:58.000000000 +0300
++++ userexit.c	2005-12-03 02:04:40.000000000 +0300
+@@ -2,12 +2,6 @@
+ * ADSTAR Distributed Storage Manager (adsm)                            * 
+ * Server Component                                                     *
+ *                                                                      *
+-* IBM Confidential                                                     *
+-* (IBM Confidential-Restricted when combined with the Aggregated OCO   *
+-* Source Modules for this Program)                                     * 
+-*                                                                      *
+-* OCO Source Materials                                                 *
+-*                                                                      *
+ * 5639-B9300 (C) Copyright IBM Corporation 1997 (Unpublished)          * 
+ ***********************************************************************/
+ 
+@@ -18,20 +12,119 @@
+  *		    the ADSM V3 Server 
+  *
+  * Environment:     *********************************************
+- *                  ** This is a platform-specific source file **
+- *                  ** versioned for: "Solaris 2.5+"           **
++ * 		    ** ED: Modified for userexitd              **
+  *                  *********************************************
+  *
+  ***********************************************************************/
+-
++#include <errno.h>
++#include <netdb.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <netinet/in.h>
++#include <arpa/inet.h>
++#include <sys/types.h>
+ #include <stdio.h>
++#include <fcntl.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <time.h>
++#include <string.h>
+ #include "userExitSample.h"
+ 
++
++#ifndef DEFSOCKET
++#define DEFSOCKET "unix:/var/run/userexitd.sock"
++#endif
++
++#define SOCKPATH_VAR "USEREXITD_ADDRESS"
++#define MAXWAIT 3
++#if 0
++#define DEBUG
++#endif
+ /**************************************
+  *** Do not modify below this line. ***
+  **************************************/
+  
+-extern void adsmV3UserExit( void *anEvent );
++/*extern void adsmV3UserExit( void *anEvent );*/
++
++/************
++ *** Main ***
++ ************/
++static int sock=0;
++
++static struct sockaddr_un t_addr_un;
++static struct sockaddr_in t_addr_in;
++static struct sockaddr *t_addr_p=NULL;
++static size_t socksiz=0;
++
++int main(int argc, char *argv[])
++{
++/* Do nothing, main() is never invoked, but stub is needed */
++
++  exit(0);  /* For picky compilers */
++
++} /* End of main() */
++
++
++struct hostent *
++gethostaddr (char *host,struct hostent* hostbuf)
++{
++  struct hostent *hp=NULL;
++#ifdef AIX
++  /* AIX  has a nice, fully reentrant libc! */
++  return (gethostbyname(host));
++#endif
++#ifndef AIX
++
++  size_t hstbuflen;
++  char *tmphstbuf;
++#ifndef SOLARIS
++  int res;
++#endif
++  int herr;
++
++  hstbuflen = BUFSIZ;
++  /* Allocate buffer, remember to free it to avoid memory leakage.  */
++  if (NULL==(tmphstbuf = malloc (hstbuflen))) {
++    return NULL;
++  }
++
++
++#ifdef SOLARIS
++  while (NULL==hp) {
++    if (NULL!=(hp=gethostbyname_r (host, hostbuf, tmphstbuf, hstbuflen,&herr))) {
++      return hp;
++    }
++    if (ERANGE==herr) {
++      hstbuflen *= 2;
++      tmphstbuf = realloc (tmphstbuf, hstbuflen);
++      if (NULL==tmphstbuf) {
++	return NULL;
++      }
++    } else {
++      return NULL;
++    }
++  }
++  return hp;
++#endif
++#ifdef __linux
++  while ((res = gethostbyname_r (host, hostbuf, tmphstbuf, hstbuflen,
++                                 &hp, &herr)) == ERANGE)
++    {
++      /* Enlarge the buffer.  */
++      hstbuflen *= 2;
++      tmphstbuf = realloc (tmphstbuf, hstbuflen);
++      if (NULL==tmphstbuf) {
++	return NULL;
++      }
++    }
++  /*  Check for errors.  */
++  if (res || hp == NULL)
++    return NULL;
++  return hp;
++#endif
++#endif /* ifndef AIX */
++}
+ 
+ /******************************************************************
+  * Procedure:  adsmV3UserExit
+@@ -40,44 +133,6 @@
+  * (see userExitSample.h) to be passed to a procedure named 
+  * adsmV3UserExit that returns a void.
+  *
+- * Only 1 instance of this function is invoked at any one time.
+- * This function MUST return inorder for the next event to be
+- * read.
+- *
+- * WARNING:
+- * ========
+- * 1. This function is run as part of a thread.  If any user-exit
+- * code accesses misaligned memory, then this module must
+- * be compiled with SparcCompiler 2.0.1 on Solaris 2.5.1 and 2.6.  We've tried 
+- * SparcCompiler 3.0, 3.0.1, 4.0, 4.1, and 4.2 on Solaris 2.5.1 and 2.6, and 
+- * misaligned memory access even with the compiler flags -misalign and -mt 
+- * can still cause bus errors.  Somehow, the generated code with
+- * SparcCompiler 2.0.1 works with Solaris 2.5.1 or 2.6 for misaligned memory
+- * access.  See Sun BUG ID 1166948 for more details.  GNU compiler
+- * produces unpredicatable results with misaligned memory access for a thread.
+- * 
+- * 2.  If you plan to catch signals, be sure to save the current signal
+- * processing information before setting your own.  Before returning from
+- * this routine, restore the signal processing information (the ADSM
+- * server depends on it!).
+- *
+- * 3.  This function is run as part of a thread.  Be careful with this
+- * userexit module.  If this module crashes (ie SIGSEGV, SIGBUS, etc),
+- * it may take the ADSM server down with it.  This happens because
+- * ADSM loads the contents of this module into its address space.
+- * 
+- * 4.  An exit() that is invoked anywhere within the user-exit will cause
+- * the ADSM server to exit!
+- *
+- * 5.  For Solaris 2.5.1 Only:  Try not to invoke/define too many
+- * new routines of your own.  It is possible to define a routine
+- * that is the same name that already exists in the server.  If so,
+- * unpredicatable behavior will result.  Dump the symbol table
+- * from the dsmserv executable to determine what function names are
+- * already taken.  See man elf(3E) for details on what a SPARC executable
+- * looks like or use "/usr/ccs/bin/nm dsmserv" to obtain a complete
+- * listing of the function names already used.
+- *
+  * INPUT :   A (void *) to the elEventRecvData structure
+  * RETURNS:  Nothing
+  ******************************************************************/
+@@ -86,19 +141,22 @@
+ {
+ /* Typecast the event data passed */
+ elEventRecvData *eventData = (elEventRecvData *)anEvent;
++time_t st;
+ 
+ /**************************************
+  *** Do not modify above this line. ***
+  **************************************/
+-
++if (!eventData) {
++	return;
++}
+ if( ( eventData->eventNum == USEREXIT_END_EVENTNUM     ) ||
+     ( eventData->eventNum == END_ALL_RECEIVER_EVENTNUM ) )
+   {
+    /* Server says to end this user-exit.  Perform any cleanup, *
+     * but do NOT exit() !!!                                    */
++    
+    return;
+   }
+-
+ /* Field Access:  eventData->.... */
+ /* Your code here ... */
+ 
+@@ -109,6 +167,127 @@
+  * Also avoid any functions that are not thread-safe.  Consult your 
+  * system's programming reference material for more information.
+  */
++ if (0==sock) {
++#ifdef DEBUG
++   fprintf(stderr," userexitd: socket is not initialized\n");
++#endif 
++   return;
++ }
++   
++   st=time(NULL);
++  do {
++	  if (-1== sendto(sock,(void*)anEvent,sizeof(struct evRdata),
++			0,
++/*			MSG_DONTWAIT|MSG_NOSIGNAL,*/
++			t_addr_p,socksiz)) {
++	  	if ((EAGAIN!=errno) && (EWOULDBLOCK!=errno)) {
++#ifdef DEBUG
++	  		perror("sendto");
++#endif
++			break;
++#ifdef DEBUG
++	  	} else {
+ 
+-return; /* For picky compilers, wait/get next eligible event */
++			fprintf(stderr," RETRY! ");
++#endif
++		}
++	  } else {
++		  break;
++	  }
++	  if ((time(NULL)-st)>MAXWAIT) {
++#ifdef DEBUG
++		  fprintf(stderr," GIVE UP! ");
++#endif
++		  break;
++	  }
++  } while(1);
++return; /* For picky compilers */
+ } /* End of adsmV3UserExit() */
++
++
++void _init(void) {
++  char *spath=DEFSOCKET;
++  struct hostent h,*hp;
++  
++  int i;
++  fprintf(stderr,"\nuserexit: Initializing\n");
++  if (getenv(SOCKPATH_VAR)) {
++    spath=strdup(getenv(SOCKPATH_VAR));
++    if (NULL==spath) {
++      fprintf(stderr,"\nuserexit: strdup: Out Of Memory\n");
++      sock=0;
++      return;
++    }
++  }
++  fprintf(stderr,"userexit: messages will go to %s\n",spath);
++  if (!sock) {
++      if (!strncmp(spath,"unix:",5)) {
++	t_addr_un.sun_family=AF_UNIX;
++	t_addr_p=(struct sockaddr*)&t_addr_un;
++	socksiz=sizeof(t_addr_un);
++	if (sizeof(t_addr_un.sun_path)<=(strlen(spath)-5)) {
++	  fprintf(stderr,"userexit: ERROR: socket path '%s' is too long, userexit disabled!\n",spath+5);
++	  sock=0;
++	  return;
++	}
++	strcpy(t_addr_un.sun_path,spath+5);
++	sock = socket(PF_UNIX, SOCK_DGRAM, 0); 
++      } else if (!strncmp(spath,"udp:",4)) {
++	t_addr_in.sin_family=AF_INET;
++	t_addr_p=(struct sockaddr*)&t_addr_in;
++	socksiz=sizeof(t_addr_in);
++	for(i=4;(i<strlen(spath)) && (spath[i]!=':') ;i++);
++	if (spath[i]==0) {
++	  fprintf(stderr,"userexit: ERROR: incorrect address: '%s', userexit disabled!\n",spath);
++	  sock=0;
++	  return;
++	}
++	spath[i]=0;
++	i++;
++#ifdef DEBUG
++	fprintf(stderr,"userexit: addr='%s' port='%s'\n",spath+4,spath+i);
++#endif
++	hp=gethostaddr(spath+4,&h);
++	if (NULL==hp) {
++	  if (!inet_aton(spath+4,&t_addr_in.sin_addr)) {
++	    fprintf(stderr,"userexit: ERROR: invalid host name or address '%s'\n",spath+4);
++	    sock=0;
++	    return;
++	  }
++	} else {
++	  memcpy(&t_addr_in.sin_addr,
++		 hp->h_addr_list[0],
++		 sizeof(t_addr_in.sin_addr));
++	}
++#ifdef DEBUG
++	fprintf(stderr,"userexit: ip='%s'\n",inet_ntoa(t_addr_in.sin_addr));
++#endif
++	t_addr_in.sin_port=htons(atoi(spath+i));
++	sock=socket(PF_INET,SOCK_DGRAM,0);
++      } else {
++	fprintf(stderr,"userexit: ERROR: incorrect address: '%s', userexit disabled!\n",spath);
++	sock=0;
++	return;
++      }
++      if (sock==-1) {
++	fprintf(stderr,"userexit: ERROR: socket call failed!");
++	sock=0;
++	return;
++      } 
++      if (-1==fcntl(sock,F_SETFL,O_NONBLOCK)) {
++	fprintf(stderr,"userexitd: ERROR: fcntl failed!");
++	sock=0;
++	return;
++      }
++  }
++  fprintf(stderr,"userexit: initialized\n");
++}
++
++void  _fini(void) {
++	fprintf(stderr,"\nuserexitd: unloading user exit\n");
++	if (sock) {
++	  close(sock);
++		sock=0;
++	}
++}
++

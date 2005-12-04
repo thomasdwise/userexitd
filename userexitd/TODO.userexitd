@@ -1,17 +1,22 @@
 TODO list for userexitd 0.2 
 (in no specific order)
 
-*Test with other TSM versions but 5.2
+*Test with other TSM versions but 5.2 and 4.2
 *Start using autoconf
 *Implement counters
-*Port to other UNIX and Linux platforms supported by TSM
-*Build RPMS
-*Add other communication types (TCP/IP)
+*finish AIX port
+*Build RPMS, solaris and AIX packages
 *Create more useful sample configurations
 *Write more docs in better English
+*run as not root if started as root
 *limits for subprocesses
+*chroot and chdir for subprocesses
+*allow changing of uid, gid and umask for subprocesses
+*allow setting access mode, uid and gid for listening unix socket 
+*allow setting of environment variables for subprocesses
+*acls for udp socket (libwrap?)
 *Implement reloading of configuration on SIGHUP
-*Automate installation
+*Automate installation of user exit
 *Port to MS Windows (maybe)
 
 

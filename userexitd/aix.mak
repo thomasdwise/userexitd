@@ -6,39 +6,11 @@ BUILDDIR=./userexitd-$(VERSION)
 #
 SYSTEM=$(shell uname -s|tr '[:upper:]' '[:lower:]')
 
-ifeq ($(SYSTEM),aix)
-MACHINE=$(shell uname -p|tr '[:upper:]' '[:lower:]')
-else
-MACHINE=$(shell uname -m|tr '[:upper:]' '[:lower:]')
-endif
+MACHINE=aix
+MACHINE=powerpc
 
 #
 
-ifeq ($(SYSTEM),linux)
-CC=gcc
-CFLAGS= -g -D_REENTRANT -D__linux -O0 -Wall -DHAVE_DAEMON -DHAVE_SYSLOG_NAMES -DHAVE_GETOPT_H -D_GNU_SOURCE
-LD=ld
-SOLDFLAGS= -shared -E
-LDFLAGS= 
-LIBEXPAT=/usr/lib/libexpat.a
-INSTALL=install
-SONAME=userexit.so
-CC_INCLUDES=
-endif
-
-ifeq ($(SYSTEM),sunos)
-CC=gcc
-CFLAGS=-g -D_REENTRANT -DSOLARIS -O0 -Wall 
-LD=/usr/ccs/bin/ld
-LDFLAGS=-lsocket -lnsl -lresolv
-SOLDFLAGS=-dy -G -lc -lsocket -lnsl -lresolv
-LIBEXPAT=/opt/sfw/lib/libexpat.a
-INSTALL=install
-SONAME=userexit.so
-CC_INCLUDES=
-endif
-
-ifeq ($(SYSTEM),aix)
 CC=gcc
 # AIX FAQ says we may need these: -D_BSD -D_BSD_INCLUDES
 CFLAGS=-g -D_THREAD_SAFE -DAIX -O0 -Wall 
@@ -49,11 +21,9 @@ SOLDFLAGS= -bnoentry -brtl -bnosymbolic -bnortllib -bnoautoexp -bM:SRE -bE:usere
 LIBEXPAT=/opt/freeware/lib/libexpat.a
 INSTALL=install
 SONAME=userexit.so
-CC_INCLUDES=
-endif
 
 # need userExitSample.h 
-CC_INCLUDES+=-I$(TSMDIR)
+CC_INCLUDES=-I$(TSMDIR)
 BINDIR=$(TSMDIR)
 USEREXITDIR=$(TSMDIR)
 CONFDIR=$(TSMDIR)

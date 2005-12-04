@@ -1,0 +1,16 @@
+ 
+Version 0.3
+
+Implemented UDP support
+Got rid of linuxisms, ported to Solaris.
+Changed mail to mailx in sample configuration
+Added the mailto: example
+Got rid of compiler warnings
+Added check of unix socket path length
+Corrected documentation
+Started port to AIX
+
+
+Version 0.2
+
+Initial Release

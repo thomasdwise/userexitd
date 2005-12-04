@@ -34,17 +34,24 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include <signal.h>
 #include <time.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/wait.h>
-#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <stdlib.h>
+#ifdef HAVE_GETOPT_H
 #include <getopt.h>
+#endif
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <stdarg.h>
 
@@ -54,16 +61,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <expat.h>
 #include "userExitSample.h"
+
+
+typedef struct _code {
+     char    *c_name;
+     int     c_val;
+} CODE;
+
+
 #include "utils.h"
 #include "userexitd.h"
 
 
 
-/*from syslog.h*/
-typedef struct _code {
-     char    *c_name;
-     int     c_val;
-} CODE;
 
 extern CODE prioritynames[];
 extern CODE facilitynames[];
@@ -73,6 +83,7 @@ extern CODE facilitynames[];
 elEventRecvData ebuf;
 config_t config;
 int debug=0;
+char cbuf[40];
 
 CODE sevcodes[] ={
   {"ADSM_SEV_INFO",         ADSM_SEV_INFO},       /* Informational message.        */
@@ -135,44 +146,6 @@ regmatch_t matches[MAXMATCH];
 int Depth;
 
 
-int get_value(char *str,int defcode,CODE dict[]) {
-  int i;
-  if (NULL==str) {
-    return defcode;
-  }
-  for (i=0;dict[i].c_name;i++) {
-    if (!strcasecmp(dict[i].c_name,str)) {
-      return dict[i].c_val;
-    }
-  }
-  log(LOG_ERR,"cannot find key '%s' in dictionary!",str);
-  err_exit("dictionary lookup failed");
-}
-
-int get_name(int value,char *defstr,CODE dict[]) {
-  int i;
-  for (i=0;dict[i].c_name;i++) {
-    if (dict[i].c_val==value) {
-      return dict[i].c_name;
-    }
-  }
-  return(defstr);
-
-}
-
-
-char *get_attr(char *attrname,char **attr) {
-  int i;
-  for(i=0;attr[i];i+=2) {
-    if (!strcasecmp(attrname,attr[i])) {
-      return xstrdup((attr[i+1]));
-    }
-  } 
-  return NULL; 
-}
-
-
-
 
 void addArg(char *arg) {
   int i;
@@ -183,10 +156,10 @@ void addArg(char *arg) {
   p=xrealloc(p,sizeof(char**)*(i+1));
   p[i]=NULL;
   caction->ex.args=p;
-  log(LOG_DEBUG,"added argument '%s'",arg);
+  logmsg(LOG_DEBUG,"added argument '%s'",arg);
 }
 
-void addCounter (char **attr) {
+void addCounter (const char **attr) {
   struct Counter **cp;
   char *tmp;
   if (NULL==crule) {
@@ -195,7 +168,7 @@ void addCounter (char **attr) {
   cdata[0]=0;
   cp=&crule->counters;
   while (NULL!=*cp) {
-    log(LOG_DEBUG,"passing counter '%s'",(*cp)->name);
+    logmsg(LOG_DEBUG,"passing counter '%s'",(*cp)->name);
     cp=&((*cp)->next);
   } 
   (*cp)=xmalloc(sizeof(struct Counter));
@@ -213,7 +186,7 @@ void addCounter (char **attr) {
   }
   (*cp)->counts=NULL;
   (*cp)->str=NULL;
-  log(LOG_DEBUG,"added counter '%s'",(*cp)->name);
+  logmsg(LOG_DEBUG,"added counter '%s'",(*cp)->name);
   ccounter=*cp;
 }
 
@@ -224,14 +197,14 @@ int getfdnum(char *str) {
     return 1;
   } else if (!strcasecmp(str,"stderr")) {
     return 2;
-  } else if (!isdigit(str[0])) {
+  } else if (!isdigit((unsigned int)str[0])) {
     err_exit("incorrect value for attribute, must be stdin or stdout or stderr or positive  numeric value");
   }
   return atoi(str);
 }
 
 
-void addFile(char ** attr) {
+void addFile(const char ** attr) {
   struct Iof **fp;
   char *tmp;
   if ((NULL==caction) || (caction->ca.a_type!=A_EXEC)) {
@@ -240,7 +213,10 @@ void addFile(char ** attr) {
   cdata[0]=0;
   fp=&caction->ex.iofiles;
   while (NULL!=*fp) {
-    log(LOG_DEBUG,"passing fd %d '%s' (%s)",(*fp)->fd,(*fp)->filename,(*fp)->mode);
+    logmsg(LOG_DEBUG,"passing fd %d '%s' (%s)",
+	(*fp)->fd,
+	((*fp)->filename)?(*fp)->filename:"(nul)",
+	(*fp)->mode?(*fp)->mode:"(nul)");
     fp=&((*fp)->next);
   }
   (*fp)=xmalloc(sizeof(struct Iof));
@@ -263,13 +239,13 @@ void addFile(char ** attr) {
   if (NULL!=get_attr("dup",attr)) {
     (*fp)->fdup=getfdnum(get_attr("dup",attr));
   }
-  log(LOG_DEBUG,"Added file fd=%d mode='%s' dup=%d filename='%s'",(*fp)->fd,(*fp)->mode,(*fp)->fdup,((*fp)->filename)?((*fp)->filename):"nul");
+  logmsg(LOG_DEBUG,"Added file fd=%d mode='%s' dup=%d filename='%s'",(*fp)->fd,(*fp)->mode,(*fp)->fdup,((*fp)->filename)?((*fp)->filename):"nul");
   ciof=*fp;
 }
 
 
 
-void addAction(enum A_TYPE a_type,char **attr) {
+void addAction(enum A_TYPE a_type,const char **attr) {
   union Action **ap;
   char *tmp;
   if (NULL==crule) {
@@ -278,7 +254,7 @@ void addAction(enum A_TYPE a_type,char **attr) {
   cdata[0]=0;
   ap=&crule->actions;
   while (NULL!=*ap) {
-    log(LOG_DEBUG,"passing action type '%s'",((*ap)->ca.a_type==A_EXEC)?"exec":"syslog");
+    logmsg(LOG_DEBUG,"passing action type '%s'",((*ap)->ca.a_type==A_EXEC)?"exec":"syslog");
     ap=&((*ap)->ca.next);
   } 
   (*ap)=xmalloc(sizeof(union Action));
@@ -302,11 +278,11 @@ void addAction(enum A_TYPE a_type,char **attr) {
     (*ap)->sys.text=NULL;
     (*ap)->sys.cmdline=NULL;
   }
-  log(LOG_DEBUG,"added action type '%s'",(a_type==A_EXEC)?"exec":(a_type==A_SYSLOG?"syslog":"system"));
+  logmsg(LOG_DEBUG,"added action type '%s'",(a_type==A_EXEC)?"exec":(a_type==A_SYSLOG?"syslog":"system"));
   caction=*ap;
 }
 
-void addPattern(char **attr) {
+void addPattern(const char **attr) {
   struct Pattern **pp;
   char *ptypename;
   struct Pattern_Type *ptype;
@@ -320,7 +296,7 @@ void addPattern(char **attr) {
   if (!ptypename) {
     err_exit("pattern must have a type attribute defined!");
   }
-  log(LOG_DEBUG,"adding pattern type '%s'",ptypename);
+  logmsg(LOG_DEBUG,"adding pattern type '%s'",ptypename);
   cdata[0]=0;
   for (i=0;patterntypes[i].name;i++) {
     if (!strcasecmp(patterntypes[i].name,ptypename)) {
@@ -329,12 +305,12 @@ void addPattern(char **attr) {
     }
   }
   if (!ptype) {
-    log(LOG_ERR,"wrong pattern type '%s'!",ptypename);
+    logmsg(LOG_ERR,"wrong pattern type '%s'!",ptypename);
     err_exit("wrong pattern type!");
   }
   pp=&crule->patterns;
   while (NULL!=*pp) {
-    log(LOG_DEBUG,"passing pattern type '%s'",(*pp)->ptype->name);
+    logmsg(LOG_DEBUG,"passing pattern type '%s'",(*pp)->ptype->name);
     pp=&((*pp)->next);
   } 
   (*pp)=xmalloc(sizeof(struct Pattern));
@@ -342,11 +318,11 @@ void addPattern(char **attr) {
   (*pp)->ptype=ptype;
   (*pp)->pflags=REG_EXTENDED|REG_ICASE;
   bzero(&((*pp)->preg),sizeof(regex_t));
-  log(LOG_DEBUG,"added pattern type '%s'",ptypename);
+  logmsg(LOG_DEBUG,"added pattern type '%s'",ptypename);
   cpattern=*pp;
 }
 
-void addRule(char **attr) {
+void addRule(const char **attr) {
   struct Rule **rp=&config.rules;
   if (get_attr("disabled",attr) && (!strcasecmp(get_attr("disabled",attr),"yes"))) {
     return;
@@ -354,18 +330,18 @@ void addRule(char **attr) {
   if (!get_attr("name",attr)) {
     err_exit("rule must have a name attribute defined!");
   } 
-  log(LOG_DEBUG,"adding rule %s",get_attr("name",attr));
+  logmsg(LOG_DEBUG,"adding rule %s",get_attr("name",attr));
   while (NULL!=*rp) {
-    log(LOG_DEBUG,"passing rule '%s'",(*rp)->name);
+    logmsg(LOG_DEBUG,"passing rule '%s'",(*rp)->name);
     if (!strcasecmp((*rp)->name,get_attr("name",attr))) {
-      log(LOG_ERR,"rule '%s' is already defined!",get_attr("name",attr));
+      logmsg(LOG_ERR,"rule '%s' is already defined!",get_attr("name",attr));
       err_exit("rule name must be unique!");
     }
     rp=&((*rp)->next);
   } 
   (*rp)=xmalloc(sizeof(struct Rule));
   
-  log(LOG_DEBUG,"added rule %s",get_attr("name",attr));
+  logmsg(LOG_DEBUG,"added rule %s",get_attr("name",attr));
   (*rp)->name=get_attr("name",attr);
   (*rp)->next=NULL;
   (*rp)->patterns=NULL;
@@ -435,14 +411,12 @@ start(void *data, const char *el, const char **attr) {
 void XMLCALL
 end(void *data, const char *el) {
   int rc;
-  size_t l;
-  /*  Depth--;*/
   
   if (!strcasecmp(el,"listen")) {
   } else if (!strcasecmp(el,"pattern")) {
     if (cpattern) {
-      if (rc=regcomp(&(cpattern->preg),cdata,cpattern->pflags)) {
-	log(LOG_ERR,"cannot compile pattern '%s'",cdata);
+      if (0!=(rc=regcomp(&(cpattern->preg),cdata,cpattern->pflags))) {
+	logmsg(LOG_ERR,"cannot compile pattern '%s'",cdata);
 	regerror(rc,&(cpattern->preg),cdata,sizeof(cdata));
 	err_exit(cdata);
       }
@@ -470,7 +444,7 @@ end(void *data, const char *el) {
   } else if (!strcasecmp(el,"file")) {
     if (ciof) {
       ciof->text=xstrdup(cdata);
-      log(LOG_DEBUG,"added text input '%s'",ciof->text);
+      logmsg(LOG_DEBUG,"added text input '%s'",ciof->text);
       ciof=NULL;
     }
   } else if (!strcasecmp(el,"command")) {
@@ -497,7 +471,7 @@ void XMLCALL charhndl(void *userData, const XML_Char *s,int len) {
 }
 
 config_t *read_config(char *filename) {
-  XML_Parser XMLCALL parser=NULL;
+  XML_Parser parser=NULL;
   char *cfdata;
   FILE *cfd;
   struct stat cfstat;
@@ -509,21 +483,23 @@ config_t *read_config(char *filename) {
   } else {
     config.ll=LOG_WARNING;
   }
-  crule=caction=cpattern=NULL;
+  crule=NULL;
+  caction=NULL;
+  cpattern=NULL;
   
-  log(LOG_DEBUG,"reading coinfiguration from '%s'",filename);
+  logmsg(LOG_DEBUG,"reading coinfiguration from '%s'",filename);
   if (NULL==(cfd=fopen(filename,"r"))) {
-    log(LOG_ERR,"%s: %s",filename,strerror(errno));
+    logmsg(LOG_ERR,"%s: %s",filename,strerror(errno));
     err_exit("cannot open configuration!");
   }
   if (fstat(fileno(cfd),&cfstat)) {
-    log(LOG_ERR,"%s: %s",filename,strerror(errno));
+    logmsg(LOG_ERR,"%s: %s",filename,strerror(errno));
     err_exit("cannot stat configuration file!");
   }
   cfdata=xmalloc(cfstat.st_size);
   
   if (1!=fread(cfdata,cfstat.st_size,1,cfd)) {
-    log(LOG_ERR,"%s: %s",filename,strerror(errno));
+    logmsg(LOG_ERR,"%s: %s",filename,strerror(errno));
     err_exit("error reading configuration!");
   }
   
@@ -535,7 +511,7 @@ config_t *read_config(char *filename) {
   XML_SetCharacterDataHandler(parser,charhndl);
 
   if (XML_STATUS_OK!=XML_Parse(parser,cfdata,cfstat.st_size,1)) {
-    log(LOG_ERR,"expat error at (%d,%d): %s",
+    logmsg(LOG_ERR,"expat error at (%d,%d): %s",
 	    XML_GetCurrentLineNumber(parser),
 	    XML_GetCurrentColumnNumber(parser),
 	    XML_ErrorString(XML_GetErrorCode(parser)));
@@ -570,7 +546,7 @@ void cleanup(int a) {
   if (unix_socket) {
     close(unix_socket);
   }
-  if (config.sockpath) {
+  if (PF_UNIX==config.sockdomain && config.sockpath) {
     unlink(config.sockpath);
   }
   exit(0);
@@ -585,249 +561,12 @@ void usage() {
 	fprintf(stderr,"\t-v\t\tprint version\n");
 }
 
-int main(int argc,char **argv) {
-  int rc;
-  char c;
-  char *opts="vhc:fd";
-  struct Config *cfg;
-  int checkconf=0;
-  
-  struct sockaddr_un my_addr;
-  struct sockaddr *my_addr_p=(struct sockaddr*)&my_addr;
-  char *configfile=DEFCFG;
-
-  FILE *fd=0;
-  char pbuf[40];
-  int pd;
-  bzero(pbuf,sizeof(pbuf));
-  
-  while(1) {
-    c=getopt(argc,argv,opts);
-    if (-1==c)  break;
-    switch(c) {
-    case 'f':
-      checkconf=1;
-      break;
-    case 'd':
-      debug=1;
-      break;
-    case 'h':
-      usage();
-      exit(0);
-      break;
-    case 'c':
-      configfile=optarg;
-      break;
-    case 'v':
-      fprintf(stderr,"userexitd -- %s\n",USEREXITD_VERSION);
-      exit(1);
-    default:
-      usage();
-      exit(1);
-    }
-  }
-
-  cdata=xmalloc(BUFSIZ);
-  scdata=BUFSIZ;
-
-  if (NULL==(cfg=read_config(configfile))) {
-    err_exit("cannot read configuration!");
-  }
-  
-  if (debug) {
-    cfg->ll=LOG_DEBUG;
-    cfg->foreground=1;
-  } 
-  
-  if (strncasecmp("unix:",cfg->address,5)) {
-    err_exit("unsupported protocol in address, only local unix sockets implemented!");
-  }
-  my_addr.sun_family=AF_UNIX;
-
-  cfg->sockpath=cfg->address+5;
-  strcpy(my_addr.sun_path,cfg->sockpath);
-  if (debug) {
-    log(LOG_DEBUG,"debug='%d'",debug);
-    log(LOG_DEBUG,"address='%s'",cfg->address);
-    log(LOG_DEBUG,"pidfile='%s'",cfg->pidfile);
-    log(LOG_DEBUG,"sockpath='%s'",cfg->sockpath);
-  }
-  if (checkconf) {
-    fprintf(stderr,"configuration seems to be OK!\n");
-    exit(0);
-  }
-  
-  openlog(cfg->ident,LOG_NDELAY,cfg->faccode);
-  
-  
-  if (config.pidfile && strlen(config.pidfile)) {
-    if (!access(cfg->pidfile,F_OK))  {
-      log(LOG_WARNING,"pid file %s exists",cfg->pidfile);
-      if (NULL==(fd=fopen(cfg->pidfile,"r"))) {
-        log(LOG_ERR,"%s: %s",cfg->pidfile,strerror(errno));
-        err_exit("cannot open pid file for reading");
-      }
-      if (fread(pbuf,1,sizeof(pbuf)-1,fd)<=0) {
-	log(LOG_ERR,"%s: %s",cfg->pidfile,strerror(errno));
-	err_exit("cannot read contents of pid file");
-      }
-      fclose(fd);
-      pd=atoi(pbuf);
-      snprintf(pbuf,sizeof(pbuf),"/proc/%d",pd);
-      if (!access(pbuf,X_OK)) {
-    	err_exit("another copy of daemon is probably running!");
-      } {
-	log(LOG_WARNING,"deleting stale pid file",cfg->pidfile);
-	if (unlink(cfg->pidfile)) {
-	  err_exit("cannot unlink stale pid file!");
-	}
-      }
-
-    }
-    if (NULL==(fd=fopen(cfg->pidfile,"w"))) {
-      log(LOG_ERR,"%s: %s",cfg->pidfile,strerror(errno));
-      err_exit("cannot open pid file for writing");
-    }
-  }
-  if (!access(my_addr.sun_path,F_OK))  {
-    log(LOG_DEBUG,"unlinking stale socket file %s",my_addr.sun_path);
-    if (unlink(cfg->sockpath)) {
-      log(LOG_ERR,"%s: %s",cfg->sockpath,strerror(errno));
-      err_exit("cannot unlink stale socket file!");
-    }
-  }
-
-  if (SIG_ERR==signal(SIGTERM,&cleanup)) {
-    log(LOG_ERR,"%s: %s","signal",strerror(errno));
-    err_exit("cannot install SIGTERM signal handler");
-  }
-  if (SIG_ERR==signal(SIGINT,&cleanup)) {
-    log(LOG_ERR,"%s: %s","signal",strerror(errno));
-    err_exit("cannot install SIGINT signal handler");
-  }
-
-  unix_socket = socket(PF_UNIX, SOCK_DGRAM, 0); 
-  if (unix_socket==-1) {
-    log(LOG_ERR,"%s: %s","socket",strerror(errno));
-    err_exit("cannot create socket!");
-  }
-  if (0>bind(unix_socket,my_addr_p, sizeof(my_addr))) {
-    log(LOG_ERR,"%s: %s","bind",strerror(errno));
-    err_exit("cannot bind to socket!");
-  }
-
-  if (!cfg->foreground) {
-    if (-1==daemon(0,0)) {
-      log(LOG_ERR,"%s: %s","daemon",strerror(errno));
-      err_exit("cannot daemonize myself!");
-    }
-  }
-	
-  if (fd) {
-    fprintf(fd,"%d\n",getpid());
-    fclose (fd);
-  }
-  
-  if (SIG_ERR==signal(SIGCHLD,&reap)) {
-    log(LOG_ERR,"%s: %s","signal",strerror(errno));
-    err_exit("cannot install SIGCHLD handler!");
-  }
-	
-  while (1) {
-    rc=recv(unix_socket,(void*)&ebuf, sizeof(ebuf), 0);
-    log(LOG_DEBUG,"\ngot %d bytes!",rc);
-    if (-1==rc) {
-      if (EAGAIN==errno) {
-	continue;
-      } else if (EINTR==errno) {
-	log(LOG_DEBUG,"%s: %s","recv",strerror(errno));
-	continue;
-      } else {
-	log(LOG_ERR,"%s: %s","recv",strerror(errno));
-	exit(3);
-      }
-    }
-    if (0==fork())  {
-      handle_packet(&ebuf);
-      exit(0);
-    }
-  }
-  exit(0);
-}
-
-
-char cbuf[40];
-
-char* test_pattern (struct Rule *rp,struct Pattern *pp,elEventRecvData *buf) {
-  char *tmp;
-  int rc;
-  if (NULL==pp) {
-    return 1;
-  }
-  log(LOG_DEBUG,"testing pattern '%s' in rule '%s'",pp->ptype->name,rp->name);
-  if (pp->ptype->datatype==UCHAR_T) {
-    if (0==(rc=regexec(&(pp->preg),pp->ptype->ptr,MAXMATCH,&matches,0))) {
-      log(LOG_DEBUG,"UCHAR_T value '%s' matches",pp->ptype->ptr);
-      return pp->ptype->ptr;
-    } else {
-      log(LOG_DEBUG,"UCHAR_T value '%s' does not match",pp->ptype->ptr);
-      return 0;
-    }
-  }
- 
-  if (pp->ptype->datatype==INT32_T) {
-    if (pp->ptype->dictionary) {
-      tmp=get_name(*((int32*)pp->ptype->ptr),"UNKNOWN",pp->ptype->dictionary);
-      strncpy(cbuf,tmp,sizeof(cbuf));
-    } else {
-      snprintf(cbuf,sizeof(cbuf),"%d",*((int32*)pp->ptype->ptr));
-    }
-  }
-  if (pp->ptype->datatype==INT16_T) {
-    if (pp->ptype->dictionary) {
-      tmp=get_name((int32)(*((int16*)pp->ptype->ptr)),"UNKNOWN",pp->ptype->dictionary);
-      strncpy(cbuf,tmp,sizeof(cbuf));
-    } else {
-      snprintf(cbuf,sizeof(cbuf),"%d",*((int16*)pp->ptype->ptr));
-    }
-  }
-  log(LOG_DEBUG,"cbuf='%s'",cbuf);
-  if (0==(rc=regexec(&(pp->preg),cbuf,MAXMATCH,&matches,0))) {
-    log(LOG_DEBUG,"INTEGER value '%s' matches",cbuf);
-    return &cbuf;
-  } else {
-    log(LOG_DEBUG,"INTEGER value '%s' does not match",cbuf);
-    return NULL;
-  }
-  return NULL;
-}
-
-
-char* test_rule(struct Rule *rp,elEventRecvData *buf) {
-  struct Pattern *pp;
-  char *matched="??????";
-  log(LOG_DEBUG,"testing rule '%s'",rp->name);
-  pp=rp->patterns;
-  if (NULL==pp) {
-    bzero(&matches[0],sizeof(regmatch_t));
-    return matched;
-  }
-  do {
-    bzero(&matches[0],sizeof(regmatch_t));
-    if (NULL==(matched=test_pattern(rp,pp,buf))) {
-      return NULL;
-    }
-  } while (NULL!=(pp=pp->next));
-  return matched;
-}
-
-
 char *do_subst_var(char *str,int spos,int epos,int *len,char *matched,char *out) {
   int p=0,i;
   char *tmp;
   DateTime *ts=NULL;
   struct tm ct;
-  if (isdigit(str[spos])) {
+  if (isdigit((unsigned int)str[spos])) {
     p=atoi(str+spos);
     if ((p>=MAXMATCH) || matches[p].rm_so==-1) {
       *len=3;
@@ -883,19 +622,17 @@ char *do_subst_var(char *str,int spos,int epos,int *len,char *matched,char *out)
   return "???";
 }
 
-
-
 char *addchar(char* sbuf,int *pos,size_t *ssize,char chr) {
-  char *nbuf;
   sbuf[*pos]=chr;
   (*pos)++;
   if ((*pos)>=(*ssize)) {
     *ssize=BUFSIZ+*ssize;
-    log(LOG_DEBUG,"addchar: allocated extra space\n");
+    logmsg(LOG_DEBUG,"addchar: allocated extra space\n");
     return(xrealloc(sbuf,*ssize));
   }
   return sbuf;
 }
+
 
 char* do_subst(char *str,char *matched) {
   int i,j=0,k,n,l;
@@ -931,6 +668,7 @@ char* do_subst(char *str,char *matched) {
 }
 
 
+
 void do_exec(union Action *ap,struct Rule *rp,elEventRecvData *buf,char *matched) {
   char *args[MAXARGS];
 
@@ -939,7 +677,7 @@ void do_exec(union Action *ap,struct Rule *rp,elEventRecvData *buf,char *matched
   struct Iof *fp;
   FILE *tfd;
   if (0==fork())  {  
-    log(LOG_DEBUG,"running exec action '%s'",ap->ex.image);
+    logmsg(LOG_DEBUG,"running exec action '%s'",ap->ex.image);
     for (i=3;i<om;i++) {
       fcntl(i,F_SETFD,FD_CLOEXEC);
     }
@@ -951,42 +689,42 @@ void do_exec(union Action *ap,struct Rule *rp,elEventRecvData *buf,char *matched
       xfree(sbuf);
     }
     for (i=0;args[i];i++) {
-      log(LOG_DEBUG," arg%d=%s",i,args[i]);
+      logmsg(LOG_DEBUG," arg%d=%s",i,args[i]);
     } 
     fp=ap->ex.iofiles;
     if (NULL==fp) {
-      log(LOG_DEBUG,"no descriptors redirected");
+      logmsg(LOG_DEBUG,"no descriptors redirected");
     }
     while (fp!=NULL) {
-      log(LOG_DEBUG,"redirecting descriptor %d",fp->fd,fp->fdup);
+      logmsg(LOG_DEBUG,"redirecting descriptor %d",fp->fd,fp->fdup);
       if (fp->filename) {
-	log(LOG_DEBUG,"to file '%s' mode='%s'",fp->filename,fp->mode);
-	if (tfd=fopen(fp->filename,fp->mode)) {
+	logmsg(LOG_DEBUG,"to file '%s' mode='%s'",fp->filename,fp->mode);
+	if (NULL!=(tfd=fopen(fp->filename,fp->mode))) {
 	  close(fp->fd);
 	  if (-1==dup2(fileno(tfd),fp->fd)){
-	    log(LOG_ERR,"cannot dup '%d': %s",fileno(tfd),strerror(errno));
+	    logmsg(LOG_ERR,"cannot dup '%d': %s",fileno(tfd),strerror(errno));
 	  }
 	  fclose(tfd);
 	  fcntl(fp->fd,F_SETFD,0);
 	} else {
-	  log(LOG_ERR,"cannot open '%s': %s",fp->filename,strerror(errno));
+	  logmsg(LOG_ERR,"cannot open '%s': %s",fp->filename,strerror(errno));
 	}
       } else if (((int)(fp->fdup))>=0) {
-	log(LOG_DEBUG,"to descriptor %d",fp->fdup);
+	logmsg(LOG_DEBUG,"to descriptor %d",fp->fdup);
 	close(fp->fd);
 	if (-1==dup2(fp->fdup,fp->fd)) {
-	  log(LOG_ERR,"dup2: %s",strerror(errno));
+	  logmsg(LOG_ERR,"dup2: %s",strerror(errno));
 	}
 	fcntl(fp->fd,F_SETFD,0);
       } else if ((!strcmp(fp->mode,"r")) && fp->text) {
-	log(LOG_DEBUG,"to text '%s'",fp->text);
+	logmsg(LOG_DEBUG,"to text '%s'",fp->text);
 
 	sbuf=do_subst(fp->text,matched);
-	log(LOG_DEBUG,"substituted text '%s'",sbuf);
-	if (!pipe(&pip)) {
+	logmsg(LOG_DEBUG,"substituted text '%s'",sbuf);
+	if (!pipe(pip)) {
 	  close(fp->fd);
 	  if (-1==dup2(pip[0],fp->fd)) {
-	    log(LOG_ERR,"dup2: %s",strerror(errno));
+	    logmsg(LOG_ERR,"dup2: %s",strerror(errno));
 	  } else {
 	    close(pip[0]);
 	    if (0==fork()) {
@@ -1001,26 +739,26 @@ void do_exec(union Action *ap,struct Rule *rp,elEventRecvData *buf,char *matched
 	    fcntl(fp->fd,F_SETFD,0);
 	  }
 	} else {
-	  log(LOG_ERR,"pipe: %s",strerror(errno));
+	  logmsg(LOG_ERR,"pipe: %s",strerror(errno));
 	}
 	xfree(sbuf);
       } else {
-	log(LOG_ERR,"invalid redirection!");
+	logmsg(LOG_ERR,"invalid redirection!");
       }
       fp=fp->next;
     }
-    log(LOG_INFO,"doing exec '%s'",ap->ex.image);
+    logmsg(LOG_INFO,"doing exec '%s'",ap->ex.image);
     execv(ap->ex.image,args);
-    log(LOG_ERR,"%s: %s","execv",strerror(errno));
+    logmsg(LOG_ERR,"%s: %s","execv",strerror(errno));
     exit(0);
   }
 }
 
-void do_syslog(union Action *ap,struct Rule *rp,elEventRecvData *buf,char *matched) {
+void do_syslogmsg(union Action *ap,struct Rule *rp,elEventRecvData *buf,char *matched) {
   char *sbuf;
-  log(LOG_DEBUG,"doing syslog '%s'",ap->log.message);
+  logmsg(LOG_DEBUG,"doing syslog '%s'",ap->log.message);
   sbuf=do_subst(ap->log.message,matched);
-  log(LOG_DEBUG,"syslog: '%s'",sbuf);
+  logmsg(LOG_DEBUG,"syslog: '%s'",sbuf);
   syslog(ap->log.facility|ap->log.priority,"%s",sbuf);
   xfree(sbuf);
 }
@@ -1029,33 +767,33 @@ void do_system(union Action *ap,struct Rule *rp,elEventRecvData *buf,char *match
   char *sbuf;
   int rc;
   FILE *wfd;
-  log(LOG_DEBUG,"doing system '%s'",ap->sys.cmdline);
+  logmsg(LOG_DEBUG,"doing system '%s'",ap->sys.cmdline);
   if (fork()) {
     return;
   }
 
   sbuf=do_subst(ap->sys.cmdline,matched);
-  log(LOG_DEBUG,"substituted cmdline: '%s'",sbuf);
+  logmsg(LOG_DEBUG,"substituted cmdline: '%s'",sbuf);
   if (NULL!=ap->sys.text) {
-    log(LOG_DEBUG,"input: '%s'",ap->sys.text);
+    logmsg(LOG_DEBUG,"input: '%s'",ap->sys.text);
     wfd=popen(sbuf,"w");
     if (NULL==wfd) {
-      log(LOG_ERR,"popen: %s",strerror(errno));
+      logmsg(LOG_ERR,"popen: %s",strerror(errno));
       exit(0);
     }
     sbuf=do_subst(ap->sys.text,matched);
-    log(LOG_DEBUG,"substituted input: '%s'",sbuf);
+    logmsg(LOG_DEBUG,"substituted input: '%s'",sbuf);
     fwrite(sbuf,strlen(sbuf),1,wfd);
     rc=pclose(wfd);
   } else {
     rc=system(sbuf);
   }
   if (-1==rc) {
-    log(LOG_ERR,"system: %s",strerror(errno));
+    logmsg(LOG_ERR,"system: %s",strerror(errno));
   } else if (WEXITSTATUS(rc)) {
-    log(LOG_WARNING,"non zero exit status: %d",WEXITSTATUS(rc));
+    logmsg(LOG_WARNING,"non zero exit status: %d",WEXITSTATUS(rc));
   } else {
-    log(LOG_INFO,"system: success");
+    logmsg(LOG_INFO,"system: success");
   }
   exit(0);
 }
@@ -1066,7 +804,7 @@ void do_actions (struct Rule *rp,elEventRecvData *buf,char *matched) {
   ap=rp->actions;
   while (ap!=NULL) {
     if (ap->ca.a_type==A_SYSLOG) {
-      do_syslog(ap,rp,buf,matched);
+      do_syslogmsg(ap,rp,buf,matched);
     } else if (ap->ca.a_type==A_EXEC) {
       do_exec(ap,rp,buf,matched);
     } else if (ap->ca.a_type==A_SYSTEM) {
@@ -1076,43 +814,343 @@ void do_actions (struct Rule *rp,elEventRecvData *buf,char *matched) {
   }
 }
 
+
+char* test_pattern (struct Rule *rp,struct Pattern *pp,elEventRecvData *buf) {
+  char *tmp;
+  int rc;
+  if (NULL==pp) {
+    return NULL;
+  }
+  logmsg(LOG_DEBUG,"testing pattern '%s' in rule '%s'",pp->ptype->name,rp->name);
+  if (pp->ptype->datatype==UCHAR_T) {
+    if (0==(rc=regexec(&(pp->preg),pp->ptype->ptr,MAXMATCH,matches,0))) {
+      logmsg(LOG_DEBUG,"UCHAR_T value '%s' matches",pp->ptype->ptr);
+      return pp->ptype->ptr;
+    } else {
+      logmsg(LOG_DEBUG,"UCHAR_T value '%s' does not match",pp->ptype->ptr);
+      return 0;
+    }
+  }
+ 
+  if (pp->ptype->datatype==INT32_T) {
+    if (pp->ptype->dictionary) {
+      tmp=get_name(*((int32*)pp->ptype->ptr),"UNKNOWN",pp->ptype->dictionary);
+      strncpy(cbuf,tmp,sizeof(cbuf));
+    } else {
+      snprintf(cbuf,sizeof(cbuf),"%d",*((int32*)pp->ptype->ptr));
+    }
+  }
+  if (pp->ptype->datatype==INT16_T) {
+    if (pp->ptype->dictionary) {
+      tmp=get_name((int32)(*((int16*)pp->ptype->ptr)),"UNKNOWN",pp->ptype->dictionary);
+      strncpy(cbuf,tmp,sizeof(cbuf));
+    } else {
+      snprintf(cbuf,sizeof(cbuf),"%d",*((int16*)pp->ptype->ptr));
+    }
+  }
+  logmsg(LOG_DEBUG,"cbuf='%s'",cbuf);
+  if (0==(rc=regexec(&(pp->preg),cbuf,MAXMATCH,matches,0))) {
+    logmsg(LOG_DEBUG,"INTEGER value '%s' matches",cbuf);
+    return cbuf;
+  } else {
+    logmsg(LOG_DEBUG,"INTEGER value '%s' does not match",cbuf);
+    return NULL;
+  }
+  return NULL;
+}
+
+
+
+char* test_rule(struct Rule *rp,elEventRecvData *buf) {
+  struct Pattern *pp;
+  char *matched="??????";
+  logmsg(LOG_DEBUG,"testing rule '%s'",rp->name);
+  pp=rp->patterns;
+  if (NULL==pp) {
+    bzero(&matches[0],sizeof(regmatch_t));
+    return matched;
+  }
+  do {
+    bzero(&matches[0],sizeof(regmatch_t));
+    if (NULL==(matched=test_pattern(rp,pp,buf))) {
+      return NULL;
+    }
+  } while (NULL!=(pp=pp->next));
+  return matched;
+}
+
+
 void handle_packet(elEventRecvData *buf) {
-  int i;
   struct Rule *rp;
-  log(LOG_DEBUG,"packet version: %d",buf->version);
-  log(LOG_DEBUG,"eventNum: %d",buf->eventNum);
-  log(LOG_DEBUG,"timestamp: %d/%d/%d %d:%d:%d",
+  logmsg(LOG_DEBUG,"packet version: %d",buf->version);
+  logmsg(LOG_DEBUG,"eventNum: %d",buf->eventNum);
+  logmsg(LOG_DEBUG,"timestamp: %d/%d/%d %d:%d:%d",
 	  buf->timeStamp.day,buf->timeStamp.mon,buf->timeStamp.year,
 	  buf->timeStamp.hour,buf->timeStamp.min,buf->timeStamp.sec);
-  log(LOG_DEBUG,"server: %s",buf->serverName);
-  log(LOG_DEBUG,"commMethod: %s",buf->commMethod);
-  log(LOG_DEBUG,"ownerName: %s",buf->ownerName);
-  log(LOG_DEBUG,"address: %s:%s",buf->hlAddress,buf->llAddress);
-  log(LOG_DEBUG,"domainName: %s",buf->domainName);
-  log(LOG_DEBUG,"schedName: %s",buf->schedName);
-  log(LOG_DEBUG,"applType=%d sevCode=%d eventType=%d",
+  logmsg(LOG_DEBUG,"server: %s",buf->serverName);
+  logmsg(LOG_DEBUG,"commMethod: %s",buf->commMethod);
+  logmsg(LOG_DEBUG,"ownerName: %s",buf->ownerName);
+  logmsg(LOG_DEBUG,"address: %s:%s",buf->hlAddress,buf->llAddress);
+  logmsg(LOG_DEBUG,"domainName: %s",buf->domainName);
+  logmsg(LOG_DEBUG,"schedName: %s",buf->schedName);
+  logmsg(LOG_DEBUG,"applType=%d sevCode=%d eventType=%d",
 	  buf->applType,buf->sevCode,buf->eventType);
 
   /* get rid of misterious trailing ~ */
   if ((strlen(buf->event)>0) && ('~'==*((buf->event)+strlen(buf->event)-1))) {
 	*(buf->event+strlen(buf->event)-1)=0;
   }
-  log(LOG_DEBUG,"%s",buf->event);
+  logmsg(LOG_DEBUG,"%s",buf->event);
   
   rp=config.rules;
   do {
     char *matched;
-    if (matched=test_rule(rp,buf)) {
-      log(LOG_INFO,"rule '%s' matches",rp->name);
+    if (NULL!=(matched=test_rule(rp,buf))) {
+      logmsg(LOG_INFO,"rule '%s' matches",rp->name);
       do_actions(rp,buf,matched);
       if (rp->final) {
-        log(LOG_DEBUG,"rule is final");
+        logmsg(LOG_DEBUG,"rule is final");
         break;
       }
     }
   } while (NULL!=(rp=rp->next));
-  log(LOG_DEBUG,"end of matching");
+  logmsg(LOG_DEBUG,"end of matching");
   exit(0);
 }
+
+#ifndef HAVE_DAEMON
+int
+daemon (int nochdir, int noclose)
+{
+  if (fork () != 0)
+    exit (0);
+
+  if (!nochdir)
+    chdir ("/");
+
+  close (0);
+  close (1);
+  close (2);
+
+  if (noclose == 0)
+    {
+      open ("/dev/null", O_RDONLY);
+      open ("/dev/null", O_WRONLY);
+      open ("/dev/null", O_WRONLY);
+    }
+
+  /* FIXME: disassociate from controlling terminal. */
+
+  return 0;
+}
+#endif
+
+int main(int argc,char **argv) {
+  int rc,i;
+  size_t socksiz;
+  char c;
+  char *opts="vhc:fd";
+  struct Config *cfg;
+  int checkconf=0;
+  
+  struct sockaddr_un my_addr_un;
+  struct sockaddr_in my_addr_in;
+  struct sockaddr *my_addr_p=NULL;
+  struct hostent *hp;
+  char *configfile=DEFCFG;
+
+  FILE *fd=0;
+  char pbuf[BUFSIZ];
+  int pd;
+  bzero(pbuf,sizeof(pbuf));
+  
+  while(1) {
+    c=getopt(argc,argv,opts);
+    if (-1==c)  break;
+    switch(c) {
+    case 'f':
+      checkconf=1;
+      break;
+    case 'd':
+      debug=1;
+      break;
+    case 'h':
+      usage();
+      exit(0);
+      break;
+    case 'c':
+      configfile=optarg;
+      break;
+    case 'v':
+      fprintf(stderr,"userexitd -- %s\n",USEREXITD_VERSION);
+      exit(1);
+    default:
+      usage();
+      exit(1);
+    }
+  }
+
+  cdata=xmalloc(BUFSIZ);
+  scdata=BUFSIZ;
+
+  if (NULL==(cfg=read_config(configfile))) {
+    err_exit("cannot read configuration!");
+  }
+  
+  if (debug) {
+    cfg->ll=LOG_DEBUG;
+    cfg->foreground=1;
+  } 
+  
+  if (!strncasecmp("unix:",cfg->address,5)) {
+    my_addr_un.sun_family=AF_UNIX;
+    cfg->sockdomain=PF_UNIX;
+    socksiz=sizeof(struct sockaddr_un);
+    cfg->sockpath=cfg->address+5;
+    if (sizeof(my_addr_un.sun_path)<=strlen(cfg->sockpath)) {
+      err_exit("socket path is too long!\n");
+    }
+    strcpy(my_addr_un.sun_path,cfg->sockpath);
+    my_addr_p=(struct sockaddr*)&my_addr_un;
+  } else if (!strncasecmp("udp:",cfg->address,4)) {
+    cfg->sockdomain=PF_INET;
+    socksiz=sizeof(struct sockaddr_in);
+    cfg->sockpath=cfg->address+4;
+
+    strncpy(pbuf,cfg->address+4,sizeof(pbuf)-1);
+    
+    bzero(&my_addr_in,sizeof(struct sockaddr_in));
+    my_addr_in.sin_family=AF_INET;
+    my_addr_p=(struct sockaddr*)&my_addr_in;
+
+    for (i=0;(pbuf[i]!=0) && (pbuf[i]!=':');i++);
+    if (pbuf[i]==0) {
+      my_addr_in.sin_port=htons(atoi(pbuf));
+    } else {
+      my_addr_in.sin_port=htons(atoi(pbuf+i+1));
+      pbuf[i]=0;
+      hp=gethostbyname(pbuf);
+      if (NULL==hp) {
+	if (!inet_aton(pbuf,&my_addr_in.sin_addr)) {
+	  err_exit("FATAL: invalid host name or address given\n");
+	}
+      } else {
+	memcpy(&my_addr_in.sin_addr,
+	       hp->h_addr_list[0],
+	       sizeof(my_addr_in.sin_addr));
+      }
+    }
+  } else {
+    err_exit("unsupported protocol in address, only unix: and udp: implemented!");
+  }
+  if (debug) {
+    logmsg(LOG_DEBUG,"debug='%d'",debug);
+    logmsg(LOG_DEBUG,"address='%s'",cfg->address);
+    logmsg(LOG_DEBUG,"pidfile='%s'",cfg->pidfile);
+    logmsg(LOG_DEBUG,"sockpath='%s'",cfg->sockpath);
+  }
+  if (checkconf) {
+    fprintf(stderr,"configuration seems to be OK!\n");
+    exit(0);
+  }
+  
+  openlog(cfg->ident,LOG_NDELAY,cfg->faccode);
+  bzero(pbuf,sizeof(pbuf));  
+  
+  if (config.pidfile && strlen(config.pidfile)) {
+    if (!access(cfg->pidfile,F_OK))  {
+      logmsg(LOG_WARNING,"pid file %s exists",cfg->pidfile);
+      if (NULL==(fd=fopen(cfg->pidfile,"r"))) {
+        logmsg(LOG_ERR,"%s: %s",cfg->pidfile,strerror(errno));
+        err_exit("cannot open pid file for reading");
+      }
+      if (fread(pbuf,1,sizeof(pbuf)-1,fd)<=0) {
+	logmsg(LOG_ERR,"%s: %s",cfg->pidfile,strerror(errno));
+	err_exit("cannot read contents of pid file");
+      }
+      fclose(fd);
+      pd=atoi(pbuf);
+      snprintf(pbuf,sizeof(pbuf),"/proc/%u",pd);
+      if (!access(pbuf,X_OK)) {
+    	err_exit("another copy of daemon is probably running!");
+      } else {
+	logmsg(LOG_WARNING,"deleting stale pid file",cfg->pidfile);
+	if (unlink(cfg->pidfile)) {
+	  err_exit("cannot unlink stale pid file!");
+	}
+      }
+    }
+    if (NULL==(fd=fopen(cfg->pidfile,"w"))) {
+      logmsg(LOG_ERR,"%s: %s",cfg->pidfile,strerror(errno));
+      err_exit("cannot open pid file for writing");
+    }
+  }
+  if ((PF_UNIX==cfg->sockdomain) && (!access(my_addr_un.sun_path,F_OK)))  {
+    logmsg(LOG_DEBUG,"unlinking stale socket file %s",my_addr_un.sun_path);
+    if (unlink(cfg->sockpath)) {
+      logmsg(LOG_ERR,"%s: %s",cfg->sockpath,strerror(errno));
+      err_exit("cannot unlink stale socket file!");
+    }
+  }
+
+  if (SIG_ERR==signal(SIGTERM,&cleanup)) {
+    logmsg(LOG_ERR,"%s: %s","signal",strerror(errno));
+    err_exit("cannot install SIGTERM signal handler");
+  }
+  if (SIG_ERR==signal(SIGINT,&cleanup)) {
+    logmsg(LOG_ERR,"%s: %s","signal",strerror(errno));
+    err_exit("cannot install SIGINT signal handler");
+  }
+
+  unix_socket = socket(cfg->sockdomain, SOCK_DGRAM, 0); 
+  if (unix_socket==-1) {
+    logmsg(LOG_ERR,"%s: %s","socket",strerror(errno));
+    err_exit("cannot create socket!");
+  }
+  if (0>bind(unix_socket,my_addr_p, socksiz)) {
+    logmsg(LOG_ERR,"%s: %s","bind",strerror(errno));
+    err_exit("cannot bind to socket!");
+  }
+
+  if (!cfg->foreground) {
+    if (-1==daemon(0,0)) {
+      logmsg(LOG_ERR,"%s: %s","daemon",strerror(errno));
+      err_exit("cannot daemonize myself!");
+    }
+  }
+	
+  if (fd) {
+    fprintf(fd,"%u\n",(unsigned int)getpid());
+    fclose (fd);
+  }
+  
+  if (SIG_ERR==signal(SIGCHLD,&reap)) {
+    logmsg(LOG_ERR,"%s: %s","signal",strerror(errno));
+    err_exit("cannot install SIGCHLD handler!");
+  }
+	
+  while (1) {
+    rc=recv(unix_socket,(void*)&ebuf, sizeof(ebuf), 0);
+    logmsg(LOG_DEBUG,"\ngot %d bytes!",rc);
+    if (-1==rc) {
+      if (EAGAIN==errno) {
+	continue;
+      } else if (EINTR==errno) {
+	logmsg(LOG_DEBUG,"%s: %s","recv",strerror(errno));
+	continue;
+      } else {
+	logmsg(LOG_ERR,"%s: %s","recv",strerror(errno));
+	exit(3);
+      }
+    }
+    if (0==fork())  {
+      handle_packet(&ebuf);
+      exit(0);
+    }
+  }
+  exit(0);
+}
+
+
 
 

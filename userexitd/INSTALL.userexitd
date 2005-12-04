@@ -1,70 +1,77 @@
 1. BUILDING USEREXITD
 
-If you've downloaded one of binary packages you can skip
-this section.
+	If you've downloaded one of the binary packages you can skip
+	this section.
 
-1.0 Prerequisites: expat library (libexpat.a), TSM server installed.
-    We do not need TSM client API, only userExitSample.h and 
-    userExitSample.c from the server distribution. 
-    Sources for userexit.so shared library are derived from the sample
-    (userExitSample.c), which does not seem to have a free license.
-    Therefore I distribute patch (userexit.patch) to make userexit.c
-    from IBM's userExitSample.c code.  
+1.0 	Prerequisites: TSM server, expat library (libexpat.a,
+    	it is available from http://expat.sourceforge.net)
 
-    untar the distribution tarball (you probably did it, since
-    you're reading this :-)
+    	The TSM client API is not needed, only userExitSample.h and 
+    	userExitSample.c from the server distribution. 
 
-	$ tar -xvzf userexitd-VERSION-src.tar.gz
+    	Sources for userexit.so shared library are derived from the sample
+    	(userExitSample.c), which does not seem to have a free license.
+    	Therefore I distribute patches (userexit.OS.patch) to make userexit.c
+    	from IBM's userExitSample.c code.  
 
-    change to distribution directory
+    	untar the distribution tarball
+
+	$ gunzip -c  userexitd-VERSION-src.tar.gz |tar -xf -
+
+    	change to the distribution directory
 
 	$ cd userexitd-VERSION
 
-1.1 edit the Makefile to reflext the location of your TSM instance 
-    (only if your TSM server instance is not installed
-    in it's default location /opt/tivoli/tsm/server/bin) 
+1.1 	Edit the makefile to reflect your system settings. If you have GNU make 
+	edit Makefile, otherwise edit sunos.mak or aix.mak. You may want to 
+	change the location of your TSM instance or some other options.
 
-
-1.2 run make (only GNU make tested)
+1.2 	run make 
 	
-	$ make 
-        [ -f userexit.c ] || patch  -o userexit.c /opt/tivoli/tsm/server/bin/userExitSample.c userexit.patch
-	patching file /opt/tivoli/tsm/server/bin/userExitSample.c
-	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall -DDEFSOCKET=\"unix:/var/run/userexitd.sock\" -I/opt/tivoli/tsm/server/bin -c -o userexit.o userexit.c
-	ld -o userexit.so -shared -E userexit.o
-	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall -DUSEREXITD_VERSION=\"0.2\" -D_POSIX_SOURCE -DDEFAULTSOCKET=\"unix:/var/run/userexitd.sock\" -DDEFAULTPIDFILE=\"/var/run/userexitd.pid\" -DDEFINDENT=\"TSM\" -DDEFCFG=\"/opt/tivoli/tsm/server/bin/userexitd.conf\"  -I/opt/tivoli/tsm/server/bin -c -o userexitd.o  userexitd.c
-	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall -DUSEREXITD_VERSION=\"0.2\" -D_POSIX_SOURCE -DDEFAULTSOCKET=\"unix:/var/run/userexitd.sock\" -DDEFAULTPIDFILE=\"/var/run/userexitd.pid\" -DDEFINDENT=\"TSM\" -DDEFCFG=\"/opt/tivoli/tsm/server/bin/userexitd.conf\"  -DSYSLOG_NAMES -I/opt/tivoli/tsm/server/bin -c -o utils.o  utils.c
-	gcc -g -D_REENTRANT -D__linux -w -O0 -Wall   -o userexitd userexitd.o utils.o /usr/lib/libexpat.a
-        $
+	# if you have GNU make
+	$ make  
 
-	Now we have built the userexit.so and userexitd binaries. Go to 2.1  
+	# if you have solaris make on Solaris
+	$ make -f sunos.mak
+
+	# if you have aix make on AIX
+	$ make -f aix.mak
+ 
+	If everything went OK, now we have built the userexit.so and userexitd 
+	binaries. Go to 2.1  
 
 
 2. INSTALLING USEREXITD AND USEREXIT.SO
 	
 2.0 	Prerequisites to install from binary package: TSM server installed. 
 
-	Untar the binary distribution (you probably did it, since you're 
-	reading this :-)
+	Untar the binary distribution 
 
-	$ tar -xvzf userexitd-VERSION-OS-CPU.tar.gz
+	$ gunzip -c userexitd-VERSION-OS-CPU.tar.gz |tar -xf -
 	
 	change to distribution directory
 
 	$ cd userexitd-VERSION
 
-        edit the Makefile to reflext the location of your TSM instance 
-        (only if your TSM server instance is not installed
-        in it's default location /opt/tivoli/tsm/server/bin) 
+	Edit the makefile to reflect your system settings. If you have GNU make 
+	edit Makefile, otherwise edit sunos.mak or aix.mak. You may want to 
+	change the location of your TSM instance or some other options.     
 
 2.1     run (probably as root) make install to install binaties and 
 	configuration sample.
 	
+	if you have GNU make
+	
 	# make install
-	install -m 700 userexitd /opt/tivoli/tsm/server/bin
-	install -m 700 userexit.so /opt/tivoli/tsm/server/bin
-	install -m 700 userexitd.conf.sam /opt/tivoli/tsm/server/bin	
+	install -m 755 userexitd /opt/tivoli/tsm/server/bin
+	install -m 755 userexit.so /opt/tivoli/tsm/server/bin
+	install -m 755 userexitd.conf.sam /opt/tivoli/tsm/server/bin	
 	#
+
+	otherwise 
+	# make -f aix.mak install
+	or
+	# make -f sunos.mak install
 
 2.2     copy userexitd.conf.sam to userexitd.conf, read comments
 	and edit userexitd.conf as you see fit.
@@ -82,10 +89,12 @@ this section.
 	
 	# /opt/tivoli/tsm/server/bin/userexitd -d
 	...
+	[skipped lots of messages]
+	...
 	debug: pidfile='/var/run/userexitd.pid'
 	debug: sockpath='/var/run/userexitd.sock'
 	
-	it should print lots of debugging info and stop waiting for a packet 
+	it should print lots of debugging info and stop, waiting for a packet 
 	from the shared library
 
 2.5	Add the following line to your dsmserv.opt to load the shared 
@@ -105,7 +114,8 @@ this section.
 	environment variable
 
 2.6 	Execute the following commands as TSM administrator to enable logging 
-	of ALL (you may want to change this) events to the user exit shared library
+	of ALL (you may want to change this) events to the user exit shared 
+	library
 
 	ENABLE EVENTS USEREXIT ALL
 
@@ -119,27 +129,47 @@ this section.
 	debug: eventNum: 2017
 	...
 
-2.7	Write and debug your rules in the configuration file (see commments in the
-	configuration file)
-	Abcense of running userexitd daemon does not affect operation of TSM server.
+2.7	Write and debug your rules in the configuration file (see commments in 
+	the configuration file)
 
-2.8	Configure automatic startup of userexitd without the debug option (-d)
-	(see your distribution administrator's guide). 
-	Probably it should start before TSM server. 
+2.8	Absense of a running userexitd daemon does not affect operation of TSM 
+	server.
 
-
-COMMAND LINE ARGUMENTS FOR USEREXITD
-
-Usage: userexitd [-v] [-h] [-f] [-c file] [-d]
-        -c file         configuration file
-        -d              debug mode
-        -f              check configuration
-        -h              print help
-        -v              print version
+2.9	Configure automatic startup of userexitd without the debug option (-d)
+	(see your operating system administrator's guide). 
+	Probably it should start before your TSM server. 
 
 
+3. COMMAND LINE ARGUMENTS FOR USEREXITD
+
+	Usage: userexitd [-v] [-h] [-f] [-c file] [-d]
+        	-c file         configuration file
+	        -d              debug mode
+        	-f              check configuration
+	        -h              print help
+        	-v              print version
 
 
- 
+4. THE COMMUNICATION SOCKET
 
+4.1 	The default is to use the unix domain socket /var/run/userexitd.sock
+
+4.2 	You may change this using <listen address="..."/> elemenet in userexitd.conf
+	for userexitd and USEREXITD_ADDRESS environment variable for the userexit.so. 
+
+	The format of address specification is one of
+
+	unix:/socket_path 			for local socket
+	udp:hostname_or_IP_address:port		for UDP socket
+
+4.3	IMPORTANT WARNING!
+	
+	Using of UDP protocol IS NOT CURRENTLY RECOMMENDED because
+	of the security and reliability problems: no access control for incoming 
+	UDP packets and no mechanism to retransmit lost packets. Please use local
+	address (127.0.0.1) or set up iptables/ipfilter/ipsec/whatever your OS has if 
+	you have to use UDP over the network. If you use local IP address (127.0.0.1) you
+	should not have any non trusted interactive users on your host.
+	
+	YOU HAVE BEEN WARNED! 
 

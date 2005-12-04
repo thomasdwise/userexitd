@@ -49,8 +49,21 @@
 	optional and may be absent. Compile-time defaults exist.
  -->
  <config>
-  <!-- 	Address to listen to. Only unix datagram sockets currently supported      -->
-  <!--  userexit.so uses an enviroment variable instead, set it to the same value -->
+  <!-- 	Address to listen to. Only unix datagram or UDP sockets currently supported 
+    	userexit.so uses an enviroment variable instead, set it to the same value  
+	<listen address="udp:127.0.0.1:4550"/>
+	
+	IMPORTANT WARNING!
+	
+	Using of UDP protocol IS NOT CURRENTLY RECOMMENDED because
+	of the security and reliability problems: no access control for incoming 
+	UDP packets and no mechanism to retransmit lost packets. Please use local
+	address (127.0.0.1) or set up iptables/ipfilter/ipsec/whatever your OS has if 
+	you have to use UDP over the network. If you use local IP address (127.0.0.1) you
+	should not have any non trusted interactive users on your host.
+	
+	YOU HAVE BEEN WARNED! 
+  -->
   <listen address="unix:/var/run/userexitd.sock"/>
 
   <!-- 	default syslog settings. Standard syslog facilities and priorities 
@@ -107,10 +120,11 @@
 
 	Each pattern contains a POSIX regular expression, see regex(7) manpage.
 
-	Each rule contains zero or more actions (<syslog>, <exec> or <system> elements)
+	Each rule contains zero or more actions (<syslog>, <exec> or <system> elements).
+	
 
 	<exec> action executes the program, specified in it's "image" attribute. 
-	You can specify arguments using <arg> subelement. 
+	You can specify arguments using <arg> subelement (with variable substitution). 
 
 	You can redirect program's input, output and error streams using <file> subelement. 
 	It's "fd" attribute sets number of file descriptor to redirect, it's value may be 
@@ -125,8 +139,17 @@
 	<system> action uses the system shell (/bin/sh) to execute contents
 	of it's command subelement (with variable substitution). If <input> element 
 	is specified, the command uses contents of  <input> element (with variable
-	substitution) as it's standard input. Because of security concerns, it is
-	better to use <exec> element if argument substitution is required.
+	substitution) as it's standard input. 
+	
+	SECURITY WARNING
+	
+	Because of security concerns, it is better to use <exec> element 
+	if argument substitution is required.
+	
+	YOU HAVE BEEN WARNED!
+
+	If you define several <exec> or <system> actions, they will work
+	in parallel, not waiting for completion of previous action.
 
 	<syslog> action writes it's contents (with variable substitution) into 
 	the system log. Standard syslog facilities and priorities
@@ -136,20 +159,38 @@
 	<syslog> elements. Variables may be referenced using %varName% notation. %% inserts
 	a single %. The following variables are supported:
 		%0%	    -   last matched expression
-		%1% - %20%  - 	n-th matched parethesized subexpression from last 
+		%1% - %20%  - 	n-th matched parethesized subexpression from the last 
 				matched expression
 		%fieldName% -	value of a field of TSM message (see pattern type)
 
  -->
  <rules>
+  <!-- send mail from administrative scripts -->
+  <!-- use command like this to send mail -->
+  <!-- ISSUE MESSAGE w "mailto:root 'important warning' Something is wrong!!!" -->
+  <rule name="MAILTO" disabled="no" final="yes">
+        <pattern type="eventNum">1496|1497|1498|1499</pattern>
+        <pattern type="event">^ANR[0-9]+[IWES] +mailto:(root|operator) +'([^']+)' +(.*)</pattern>
+        <exec image="/usr/bin/mailx">
+                <arg>-s</arg><arg>%2%</arg>
+                <arg>%1%</arg>
+		<file fd="0" mode="r">
+Message from TSM server, severity %sevCode%
+
+%3%
+
+		</file>
+	</exec>
+  </rule>
   <!-- VARIOUS MEDIA RELATED REQUESTS -->
   <rule name="ANR8308I" disabled="no">
   <!-- bug operator every 10 minutes to checkin volume starting with 5th minute-->
         <pattern type="event">^ANR8308I ([0-9]+): ([^ ]+) volume ([^ ]+) is required for use in library ([^ ]+); CHECKIN LIBVOLUME required within ([0-9]?[0-9]?5) .*</pattern>
-        <exec image="/usr/bin/mail">
+        <exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>MEDIA REQUEST for %3%</arg>
                 <arg>operator</arg>
 		<file fd="0" mode="r">
+
 TSM media request:
 %0%
 		</file>
@@ -160,7 +201,7 @@ TSM media request:
   <!-- the similar thing using system instead of exec -->
 	<pattern type="event">^ANR8373I ([0-9]+): Fill the bulk entry/exit port of library ([^ ]+) with all ([^ ]+) volumes to be processed within ([0-9]?[0-9]?5) .*</pattern>
 	<system>
-		<command>mail -s "MEDIA REQUEST" operator</command>
+		<command>mailx -s "MEDIA REQUEST" operator</command>
 		<input>
 TSM media request:
 %0%
@@ -169,7 +210,7 @@ TSM media request:
   </rule>
   <rule name="ANR8326I" disabled="no">
 	<pattern type="event">^ANR8326I ([0-9]+): Mount ([^ ]*) volume ([^ ]*) [^ ]+ in drive ([^ ]+)( [^ ]+)? of library ([^ ]+) within ([0-9]?[0-9]?5) minutes.</pattern>
-        <exec image="/usr/bin/mail">
+        <exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>MEDIA REQUEST for %3%</arg>
                 <arg>operator</arg>
 		<file fd="stdin" mode="r">
@@ -182,7 +223,7 @@ TSM media request:
 <!-- INCORRECT VOLUME ERROR -->
   <rule name="ANR8354E" disabled="no">
    <pattern type="event">^ANR8354E ([0-9]+): Incorrect volume ([^ ]+) mounted in drive</pattern>
-        <exec image="/usr/bin/mail">
+        <exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>TSM Incorrect volume error</arg>
                 <arg>operator</arg>
 		<file fd="stdin"  mode="r">
@@ -209,7 +250,7 @@ TSM information:
   </rule>
   <rule name="ANR8351E">
 	<pattern type="event">^ANR8351E ([0-9]+): Mount request for volume ([^ ]*) has timed out.*</pattern>
-        <exec image="/usr/bin/mail">
+        <exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>TSM media request for %2% timed out</arg>
                 <arg>operator</arg>
 		<file fd="stdin"  mode="r">
@@ -221,7 +262,7 @@ TSM error:
 
   <rule name="ANR8372I" disabled="no">
 	<pattern type="event">^ANR8372I ([0-9]+): Remove ([^ ]+) volume ([^ ]+) from drive ([^ ]+).*</pattern>
-	<exec image="/usr/bin/mail">
+	<exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>Please remove volume %3%</arg>
                 <arg>operator</arg>
                 <file fd="stdin"  mode="r">
@@ -234,7 +275,7 @@ TSM information:
 <!-- must be ejected manually -->
   <rule name="ANR8317I" disabled="no">
 	<pattern type="event">^ANR8317I The volume in ([^ ]+).*</pattern>
-	<exec image="/usr/bin/mail">
+	<exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>Please remove volume</arg>
                 <arg>operator</arg>
                 <file fd="stdin"  mode="r">
@@ -258,7 +299,7 @@ TSM information:
 <!-- want reclamation errors -->
   <rule name="ReclamationFailure" final="yes">
     <pattern type="event">^ANR0985I Process ([0-9]+) for (SPACE RECLAMATION) running in the (.*) completed with completion state FAILURE at .*</pattern>
-	<exec image="/usr/bin/mail">
+	<exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>Reclamation error</arg>
                 <arg>operator</arg>
                 <file fd="stdin" mode="r">
@@ -272,7 +313,7 @@ TSM informational message:
 <!-- failed and missing schedules -->
 <rule name="SCHEDULE_FAILED">
    <pattern type="event">^ANR2579E Schedule ([^ ]+) in domain ([^ ]+) for node ([^ ]+) failed \(return code ([0-9]+)\).*</pattern>
-	<exec image="/usr/bin/mail">
+	<exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>Client schedule %1%/%2% on node %3% failed</arg>
                 <arg>operator</arg>
                 <file fd="stdin"  mode="r">
@@ -283,7 +324,7 @@ TSM error message:
    </rule>
    <rule name="SCHEDULE_MISSED">
    <pattern type="event">^ANR2578W Schedule ([^ ]+) in domain ([^ ]+) for node ([^ ]+) has missed its scheduled start up window.*</pattern>
-	<exec image="/usr/bin/mail">
+	<exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>Client schedule %1%/%2% on node %3% missed</arg>
                 <arg>operator</arg>
                 <file fd="stdin" mode="r">
@@ -295,7 +336,7 @@ TSM error message:
 
    <rule name="ADMINISTRATIVE_SCHEDULE_FAILED">
    <pattern type="event">^ANR2752E Scheduled command ([^ ]+) failed.*</pattern>
-	<exec image="/usr/bin/mail">
+	<exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>Administrative schedule %1% failed</arg>
                 <arg>operator</arg>
                 <file fd="stdin"  mode="r">
@@ -305,7 +346,7 @@ TSM error message:
         </exec>
    </rule>
 
-<!-- this rule is final rule: 
+<!-- these rules are final: 
      I do not want traps for CLI syntax errors, missed TCP connection, session timeouts, etc
 -->
 <rule name="BOGUS_ERRORS" final="yes">
@@ -314,7 +355,6 @@ TSM error message:
 <rule name="BOGUS_WARNINGS" final="yes">
     <pattern type="event">(^ANR0482W).*</pattern>
 </rule>
-
 <rule name="BOGUS_INFO" final="yes">
     <pattern type="event">(^ANR2017I).*</pattern>
 </rule>
@@ -365,4 +405,4 @@ TSM error message:
   </rule>
  </rules>
 </userexitd>
-
+<!-- END OF userexitd configuration -->

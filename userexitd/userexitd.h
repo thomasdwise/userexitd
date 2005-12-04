@@ -24,6 +24,7 @@
 #define MAXARGS 100
 
 typedef struct Config {
+  int sockdomain;
   char *address;
   char *pidfile;
   char *sockpath;
@@ -74,7 +75,7 @@ typedef struct Iof {
   char *mode;
   char *filename;
   char *text;
-  signed int *fdup;
+  signed int fdup;
 } iof_t;
 
 
@@ -133,5 +134,7 @@ typedef struct Rule {
   int disabled;
 
 } rule_t;
+
+void cleanup(int a);
 
 #endif

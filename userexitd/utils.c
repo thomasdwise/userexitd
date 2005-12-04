@@ -25,20 +25,29 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <features.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <string.h>
+
+#ifdef HAVE_SYSLOG_NAMES
+#define SYSLOG_NAMES
+#endif
 #include <syslog.h>
-#include <stdio.h>
+#ifndef HAVE_SYSLOG_NAMES
+#include "syslog_names.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <limits.h>
-#include <getopt.h>
+#include <stdlib.h>
+#include <strings.h>
 #include <string.h>
 #include <ctype.h>
-#include <stdarg.h>
 #include <regex.h>
+
 #include "userExitSample.h"
 #include "utils.h"
 #include "userexitd.h"
@@ -47,7 +56,47 @@ extern elEventRecvData ebuf;
 extern config_t config;
 extern int foreground;
 
-void log(int level,char *fmt,...) {
+
+
+int get_value(char *str,int defcode,CODE dict[]) {
+  int i;
+  if (NULL==str) {
+    return defcode;
+  }
+  for (i=0;dict[i].c_name;i++) {
+    if (!strcasecmp(dict[i].c_name,str)) {
+      return dict[i].c_val;
+    }
+  }
+  logmsg(LOG_ERR,"cannot find key '%s' in dictionary!",str);
+  err_exit("dictionary lookup failed");
+  return(0);
+}
+
+char* get_name(int value,char *defstr,CODE dict[]) {
+  int i;
+  for (i=0;dict[i].c_name;i++) {
+    if (dict[i].c_val==value) {
+      return dict[i].c_name;
+    }
+  }
+  return(defstr);
+}
+
+
+char *get_attr(char *attrname,const char **attr) {
+  int i;
+  for(i=0;attr[i];i+=2) {
+    if (!strcasecmp(attrname,attr[i])) {
+      return xstrdup((attr[i+1]));
+    }
+  } 
+  return NULL; 
+}
+
+
+
+void logmsg(int level,char *fmt,...) {
   char lb[BUFSIZ];
   va_list ap;
   va_start(ap, fmt);
@@ -57,7 +106,7 @@ void log(int level,char *fmt,...) {
       vfprintf(stderr,fmt,ap);
       fprintf(stderr,"\n");
     } else {
-      vsnprintf (lb, sizeof(lb), fmt, ap);
+      vsnprintf(lb, sizeof(lb), fmt, ap);
       syslog(level | config.faccode,"%s",lb);
     }
   }
@@ -65,7 +114,8 @@ void log(int level,char *fmt,...) {
 }
 
 void err_exit(char *msg) {
-  log(LOG_ERR,"FATAL: %s",msg);
+  logmsg(LOG_ERR,"FATAL: %s",msg);
+  cleanup(0);
   exit(2);
 }
 
@@ -128,7 +178,7 @@ char *xstrdup(const char *str)
 #define OPEN_MAX 1024
 #endif
 
-int open_max() {
+int open_max(void) {
   int i=sysconf(_SC_OPEN_MAX);
   if (-1==i) return OPEN_MAX;
   return i;

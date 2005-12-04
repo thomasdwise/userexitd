@@ -4,56 +4,23 @@ TSMDIR=/opt/tivoli/tsm/server/bin
 VERSION=0.3
 BUILDDIR=./userexitd-$(VERSION)
 #
-SYSTEM=$(shell uname -s|tr '[:upper:]' '[:lower:]')
+SYSTEM:sh=uname -s|tr '[:upper:]' '[:lower:]'
 
-ifeq ($(SYSTEM),aix)
-MACHINE=$(shell uname -p|tr '[:upper:]' '[:lower:]')
-else
-MACHINE=$(shell uname -m|tr '[:upper:]' '[:lower:]')
-endif
+MACHINE:sh=uname -m|tr '[:upper:]' '[:lower:]'
 
 #
 
-ifeq ($(SYSTEM),linux)
-CC=gcc
-CFLAGS= -g -D_REENTRANT -D__linux -O0 -Wall -DHAVE_DAEMON -DHAVE_SYSLOG_NAMES -DHAVE_GETOPT_H -D_GNU_SOURCE
-LD=ld
-SOLDFLAGS= -shared -E
-LDFLAGS= 
-LIBEXPAT=/usr/lib/libexpat.a
-INSTALL=install
-SONAME=userexit.so
-CC_INCLUDES=
-endif
-
-ifeq ($(SYSTEM),sunos)
 CC=gcc
 CFLAGS=-g -D_REENTRANT -DSOLARIS -O0 -Wall 
 LD=/usr/ccs/bin/ld
 LDFLAGS=-lsocket -lnsl -lresolv
-SOLDFLAGS=-dy -G -lc -lsocket -lnsl -lresolv
+SOLDFLAGS=-dy -G  -lc -lsocket -lnsl -lresolv
 LIBEXPAT=/opt/sfw/lib/libexpat.a
 INSTALL=install
 SONAME=userexit.so
-CC_INCLUDES=
-endif
-
-ifeq ($(SYSTEM),aix)
-CC=gcc
-# AIX FAQ says we may need these: -D_BSD -D_BSD_INCLUDES
-CFLAGS=-g -D_THREAD_SAFE -DAIX -O0 -Wall 
-LD=/usr/ccs/bin/ld
-# AIX ld is so funny!I hope I got it right:
-LDFLAGS=
-SOLDFLAGS= -bnoentry -brtl -bnosymbolic -bnortllib -bnoautoexp -bM:SRE -bE:userexit.exp -binitfini:_init:_fini -lc
-LIBEXPAT=/opt/freeware/lib/libexpat.a
-INSTALL=install
-SONAME=userexit.so
-CC_INCLUDES=
-endif
 
 # need userExitSample.h 
-CC_INCLUDES+=-I$(TSMDIR)
+CC_INCLUDES=-I$(TSMDIR)
 BINDIR=$(TSMDIR)
 USEREXITDIR=$(TSMDIR)
 CONFDIR=$(TSMDIR)
@@ -84,11 +51,7 @@ clean:
 src-release: clean $(PATCHNAME)
 	echo ./userexitd-$(VERSION)/userexit.c >excluded.files
 	echo ./userexitd-$(VERSION)/excluded.files >>excluded.files
-ifeq ($(SYSTEM),linux)
-	cd .. && tar -cvf userexitd-$(VERSION)-src.tar -X ./userexitd-$(VERSION)/excluded.files ./userexitd-$(VERSION)/
-else
 	cd .. && tar -cvXf ./userexitd-$(VERSION)/excluded.files userexitd-$(VERSION)-src.tar  ./userexitd-$(VERSION)
-endif
 	rm -f excluded.files
 	gzip -fv ../userexitd-$(VERSION)-src.tar
 
