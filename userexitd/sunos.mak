@@ -51,6 +51,7 @@ clean:
 src-release: clean $(PATCHNAME)
 	echo ./userexitd-$(VERSION)/userexit.c >excluded.files
 	echo ./userexitd-$(VERSION)/excluded.files >>excluded.files
+	echo ./userexitd-$(VERSION)/CVS >>excluded.files
 	cd .. && tar -cvXf ./userexitd-$(VERSION)/excluded.files userexitd-$(VERSION)-src.tar  ./userexitd-$(VERSION)
 	rm -f excluded.files
 	gzip -fv ../userexitd-$(VERSION)-src.tar

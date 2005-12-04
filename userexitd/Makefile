@@ -84,6 +84,7 @@ clean:
 src-release: clean $(PATCHNAME)
 	echo ./userexitd-$(VERSION)/userexit.c >excluded.files
 	echo ./userexitd-$(VERSION)/excluded.files >>excluded.files
+	echo ./userexitd-$(VERSION)/CVS >>excluded.files
 ifeq ($(SYSTEM),linux)
 	cd .. && tar -cvf userexitd-$(VERSION)-src.tar -X ./userexitd-$(VERSION)/excluded.files ./userexitd-$(VERSION)/
 else

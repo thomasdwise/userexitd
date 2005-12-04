@@ -1,5 +1,5 @@
 --- /opt/tivoli/tsm/server/bin/userExitSample.c	2003-06-13 21:44:01.000000000 +0400
-+++ userexit.c	2005-12-03 02:04:40.000000000 +0300
++++ userexit.c	2005-12-04 21:53:43.000000000 +0300
 @@ -12,33 +12,120 @@
   *		    the ADSM V3 Server 
   *
