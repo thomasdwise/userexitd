@@ -6,10 +6,10 @@ BUILDDIR=./userexitd-$(VERSION)
 #
 SYSTEM=$(shell uname -s|tr '[:upper:]' '[:lower:]')
 
-ifeq ($(SYSTEM),aix)
-MACHINE=$(shell uname -p|tr '[:upper:]' '[:lower:]')
-else
+ifeq ($(SYSTEM),linux)
 MACHINE=$(shell uname -m|tr '[:upper:]' '[:lower:]')
+else
+MACHINE=$(shell uname -p|tr '[:upper:]' '[:lower:]')
 endif
 
 #

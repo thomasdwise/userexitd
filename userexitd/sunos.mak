@@ -6,7 +6,7 @@ BUILDDIR=./userexitd-$(VERSION)
 #
 SYSTEM:sh=uname -s|tr '[:upper:]' '[:lower:]'
 
-MACHINE:sh=uname -m|tr '[:upper:]' '[:lower:]'
+MACHINE:sh=uname -p|tr '[:upper:]' '[:lower:]'
 
 #
 
