@@ -88,7 +88,7 @@ char *get_attr(char *attrname,const char **attr) {
   int i;
   for(i=0;attr[i];i+=2) {
     if (!strcasecmp(attrname,attr[i])) {
-      return xstrdup((attr[i+1]));
+      return attr[i+1];
     }
   } 
   return NULL; 
