@@ -78,7 +78,7 @@
   <pid path="/var/run/userexitd.pid"/>
 
   <!-- use foreground or background element to set execution mode. The latter is default -->
-  <foreground/>
+  <background/>
 
  </config>
 

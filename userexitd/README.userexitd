@@ -19,16 +19,18 @@ configured via it's configuration file (XML syntax)
 
 CURRENT STATUS
 
-Version 0.3 is the current version of this software
+Version 0.4 is the current version of this software
 
-It features code cleanup, Solaris and AIX ports, 
-support for UDP protocol, some documentation enhancements. 
+It features some code cleanup, a working AIX port,
+support for reloading configuration on SIGHUP
 
-This release was tested with TSM 5.2 on linux/x86 and TSM 4.2 on solaris/sparc.
+This release was built with gcc, vendor compilers were no tested
 
-Any comments, suggestions, bug reports and fixes, enhancements, ports to other
-platforms are welcome.
+This release was tested with TSM 5.2 on linux/x86, TSM 4.2 on solaris/sparc
+and TSM 5.3 (64bit) on AIX 5.3
 
+Any comments, suggestions, bug reports and fixes, enhancements, ports or shell
+access to other platforms are welcome.
 
 DOCUMENTATION
 

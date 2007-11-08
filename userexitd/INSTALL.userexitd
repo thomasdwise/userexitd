@@ -26,6 +26,12 @@
 	edit Makefile, otherwise edit sunos.mak or aix.mak. You may want to 
 	change the location of your TSM instance or some other options.
 
+	Specifically, you may want to change these variables
+	TSMDIR	to reflect location of TSM server binary directory
+	CC_INCLUDES to reflect location of libexpat headers
+	LIBEXPAT to point to the expat library
+	SONAMES	(on AIX) which userexit modules build: 32 or 64 bit, or both
+
 1.2 	run make 
 	
 	# if you have GNU make
@@ -37,8 +43,8 @@
 	# if you have aix make on AIX
 	$ make -f aix.mak
  
-	If everything went OK, now we have built the userexit.so and userexitd 
-	binaries. Go to 2.1  
+	If everything went OK, now we have built the userexitd and userexit.so
+	(and userexit64.so if on AIX) binaries. Go to 2.1  
 
 
 2. INSTALLING USEREXITD AND USEREXIT.SO
@@ -63,15 +69,18 @@
 	if you have GNU make
 	
 	# make install
-	install -m 755 userexitd /opt/tivoli/tsm/server/bin
-	install -m 755 userexit.so /opt/tivoli/tsm/server/bin
-	install -m 755 userexitd.conf.sam /opt/tivoli/tsm/server/bin	
-	#
 
 	otherwise 
 	# make -f aix.mak install
 	or
 	# make -f sunos.mak install
+
+	AIX NOTE
+
+	Under AIX there are two versions of TSM server: 32 bit and 
+	64 bit. So you need a matching userexit shared library, the 64-bit
+	one will be built as userexit64.so, the 32-bit one will be build 
+	as userexit.so
 
 2.2     copy userexitd.conf.sam to userexitd.conf, read comments
 	and edit userexitd.conf as you see fit.
@@ -85,7 +94,7 @@
 	#
 
 2.4     Start userexitd process in debug mode. -d parameter overrides 
-	<background/> and <logging/> settings from configuration file.
+	<background/> and <logging/> settings from the configuration file.
 	
 	# /opt/tivoli/tsm/server/bin/userexitd -d
 	...
@@ -101,6 +110,10 @@
 	library at server start
 
 	USEREXIT YES userexit.so
+
+	or (for 64-bit TSM on AIX)
+	USEREXIT YES userexit64.so
+
 
 	halt and start the TSM server.
 

@@ -373,7 +373,7 @@ void addRule(const char **attr)
     crule = *rp;
 }
 
-void XMLCALL start(void *data, const char *el, const char **attr)
+void XMLCALL handle_start(void *data, const char *el, const char **attr)
 {
     if (config_error) {
         return;
@@ -430,7 +430,7 @@ void XMLCALL start(void *data, const char *el, const char **attr)
 }                               /* End of start handler */
 
 
-void XMLCALL end(void *data, const char *el)
+void XMLCALL handle_end(void *data, const char *el)
 {
     int rc;
 
@@ -545,7 +545,7 @@ config_t *read_config(char *filename)
         return NULL;
     }
 
-    XML_SetElementHandler(parser, start, end);
+    XML_SetElementHandler(parser, handle_start, handle_end);
     XML_SetCharacterDataHandler(parser, charhndl);
 
     config_error = NULL;
@@ -972,9 +972,9 @@ void handle_packet(elEventRecvData * buf)
     /*
      * get rid of misterious trailing ~ 
      */
-    if ((strlen(buf->event) > 0)
-        && ('~' == *((buf->event) + strlen(buf->event) - 1))) {
-        *(buf->event + strlen(buf->event) - 1) = 0;
+    if ((strlen((char*)buf->event) > 0)
+        && ('~' == *((buf->event) + strlen((char*)buf->event) - 1))) {
+        *((uchar*)buf->event + strlen((char*)buf->event) - 1) = 0;
     }
     logmsg(LOG_DEBUG, "%s", buf->event);
 
@@ -1258,8 +1258,8 @@ struct Rule *free_rule(struct Rule *r)
 
 void free_config(struct Config *cfg)
 {
-    logmsg(LOG_DEBUG, "freeing configuration structure");
     struct Rule *r = cfg->rules;
+    logmsg(LOG_DEBUG, "freeing configuration structure");
 
     if (cfg->pidfile) {
         xfree(cfg->pidfile);
@@ -1336,7 +1336,7 @@ struct Config *do_reload_config(char *cfgfile)
 int main(int argc, char **argv)
 {
     int rc;
-    char c;
+    signed char c;
     char *opts = "vhc:fd";
     struct Config *cfg;
     int checkconf = 0;

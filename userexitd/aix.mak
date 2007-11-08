@@ -1,29 +1,35 @@
 #
 # TSM installation directory
-TSMDIR=/opt/tivoli/tsm/server/bin
+TSMDIR=/usr/tivoli/tsm/server/bin
 VERSION=0.3
 BUILDDIR=./userexitd-$(VERSION)
-#
-SYSTEM=$(shell uname -s|tr '[:upper:]' '[:lower:]')
 
-MACHINE=aix
+SYSTEM=aix
 MACHINE=powerpc
-
-#
-
 CC=gcc
-# AIX FAQ says we may need these: -D_BSD -D_BSD_INCLUDES
-CFLAGS=-g -D_THREAD_SAFE -DAIX -O0 -Wall 
-LD=/usr/ccs/bin/ld
-# AIX ld is so funny!I hope I got it right:
-LDFLAGS=
-SOLDFLAGS= -bnoentry -brtl -bnosymbolic -bnortllib -bnoautoexp -bM:SRE -bE:userexit.exp -binitfini:_init:_fini -lc
-LIBEXPAT=/opt/freeware/lib/libexpat.a
-INSTALL=install
-SONAME=userexit.so
 
-# need userExitSample.h 
-CC_INCLUDES=-I$(TSMDIR)
+CFLAGS=-g -D_THREAD_SAFE -DAIX -O0 -Wall 
+SOCFLAGS=-g -D_THREAD_SAFE -DAIX -O0 -Wall
+SO64CFLAGS=$(SOFLAGS) -maix64
+LD=/usr/ccs/bin/ld
+LDFLAGS= 
+SOLDFLAGS= -bnoentry -brtl -bnosymbolic -bnortllib -bnoautoexp -bM:SRE -bE:userexit.exp -binitfini:_init:_fini -lc
+SO64LDFLAGS= -b64 $(SOLDFLAGS)
+# expat library location
+LIBEXPAT=../expat-2.0.0/.libs/libexpat.a
+INSTALL=installbsd -c
+
+# userexit shared objects:
+SONAME=userexit.so
+SO64NAME=userexit64.so
+# comment out 64 or 32-bit module if you do not need it
+SOFILES=$(SONAME) $(SO64NAME)
+
+#PATCH=/opt/freeware/bin/patch
+PATCH=patch
+
+# need userExitSample.h and libexpat headers
+CC_INCLUDES=-I$(TSMDIR) -I../expat-2.0.0/lib
 BINDIR=$(TSMDIR)
 USEREXITDIR=$(TSMDIR)
 CONFDIR=$(TSMDIR)
@@ -37,34 +43,31 @@ DEFCFG=\"$(TSMDIR)/userexitd.conf\"
 
 DEFINES=-DUSEREXITD_VERSION=\"$(VERSION)\" -DDEFAULTSOCKET=$(DEFSOCKET) -DDEFAULTPIDFILE=$(DEFPIDFILE) -DDEFINDENT=$(DEFIDENT) -DDEFCFG=$(DEFCFG) 
 
-all:	$(SONAME) userexitd 
+all:	$(SOFILES) userexitd 
 
-install: userexitd $(SONAME)
+install: userexitd $(SONAMES)
 	$(INSTALL) -m 755 userexitd $(BINDIR)
-	$(INSTALL) -m 755 $(SONAME) $(TSMDIR)
 	$(INSTALL) -m 755 userexitd.conf.sam $(CONFDIR)
+	$(INSTALL) -m 755 $(SONAME) $(TSMDIR) || true
+	$(INSTALL) -m 755 $(SO64NAME) $(TSMDIR) || true
 
 $(PATCHNAME): userexit.c
-	diff -u $(TSMDIR)/userExitSample.c userexit.c >$(PATCHNAME) || [ $$? -eq 1 ]
+	diff $(TSMDIR)/userExitSample.c userexit.c >$(PATCHNAME) || [ $$? -eq 1 ]
 
 clean:
-	rm -f *.o $(SONAME) userexitd *~ core .*.swp $(PATCHNAME)
+	rm -f *.o $(SOFILES) userexitd *~ core .*.swp $(PATCHNAME)
 
 # cannot redistribute userexit.c
 src-release: clean $(PATCHNAME)
 	echo ./userexitd-$(VERSION)/userexit.c >excluded.files
 	echo ./userexitd-$(VERSION)/excluded.files >>excluded.files
 	echo ./userexitd-$(VERSION)/CVS >>excluded.files
-ifeq ($(SYSTEM),linux)
-	cd .. && tar -cvf userexitd-$(VERSION)-src.tar -X ./userexitd-$(VERSION)/excluded.files ./userexitd-$(VERSION)/
-else
 	cd .. && tar -cvXf ./userexitd-$(VERSION)/excluded.files userexitd-$(VERSION)-src.tar  ./userexitd-$(VERSION)
-endif
 	rm -f excluded.files
 	gzip -fv ../userexitd-$(VERSION)-src.tar
 
-bin-release: $(SONAME) userexitd 
-	cd .. && tar -cvf userexitd-$(VERSION)-$(SYSTEM)-$(MACHINE).tar $(BUILDDIR)/userexitd $(BUILDDIR)/$(SONAME) $(BUILDDIR)/[A-Z]*.userexitd $(BUILDDIR)/*.conf.sam $(BUILDDIR)/Makefile $(BUILDDIR)/*.mak
+bin-release: $(SOFILES) userexitd 
+	cd .. && tar -cvf userexitd-$(VERSION)-$(SYSTEM)-$(MACHINE).tar $(BUILDDIR)/userexitd $(BUILDDIR)/*.so $(BUILDDIR)/[A-Z]*.userexitd $(BUILDDIR)/*.conf.sam $(BUILDDIR)/Makefile $(BUILDDIR)/*.mak
 	cd .. && gzip -fv userexitd-$(VERSION)-$(SYSTEM)-$(MACHINE).tar
 
 utils.o: utils.c utils.h userexitd.h
@@ -75,14 +78,20 @@ userexitd.o: userexitd.c utils.h userexitd.h
 
 
 userexitd: userexitd.o utils.o 
-	$(CC) $(CFLAGS) $(LDFLAGS)  -o $@ $^ $(LIBEXPAT)
+	$(CC) $(CFLAGS) $(LDFLAGS)  -o $@ userexitd.o utils.o $(LIBEXPAT)
 
 $(SONAME): userexit.o 
 	$(LD) -o $@ $(SOLDFLAGS) userexit.o
 
+$(SO64NAME): userexit64.o 
+	$(LD) -o $@ $(SO64LDFLAGS) userexit64.o
+
 userexit.o: userexit.c
-	$(CC) $(CFLAGS) -DDEFSOCKET=$(DEFSOCKET) $(CC_INCLUDES) -c -o $@ $<
+	$(CC) $(SOCFLAGS) -DDEFSOCKET=$(DEFSOCKET) $(CC_INCLUDES) -c -o $@ userexit.c
+
+userexit64.o: userexit.c
+	$(CC) $(SO64CFLAGS) -DDEFSOCKET=$(DEFSOCKET) $(CC_INCLUDES) -c -o $@ userexit.c
 
 userexit.c: 
-	[ -f userexit.c ] || patch -o userexit.c $(TSMDIR)/userExitSample.c < $(PATCHNAME) 
+	[ -f userexit.c ] || $(PATCH) -o userexit.c $(TSMDIR)/userExitSample.c < $(PATCHNAME)
 

@@ -1,4 +1,10 @@
- 
+Version 0.4
+
+Reloading of configuration on SIGHUP is now supported
+Thanks to Chris Schulz (who provided me with access to an AIX box
+for porting) now we have a working AIX port
+Some code cleanup
+
 Version 0.3
 
 Implemented UDP support
@@ -14,3 +20,4 @@ Started port to AIX
 Version 0.2
 
 Initial Release
+

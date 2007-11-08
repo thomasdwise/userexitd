@@ -4,9 +4,9 @@ TSMDIR=/opt/tivoli/tsm/server/bin
 VERSION=0.3
 BUILDDIR=./userexitd-$(VERSION)
 #
-SYSTEM:sh=uname -s|tr '[:upper:]' '[:lower:]'
+SYSTEM:sh=uname -s|tr '[A-Z]' '[a-z]'
 
-MACHINE:sh=uname -p|tr '[:upper:]' '[:lower:]'
+MACHINE:sh=uname -p|tr '[A-Z]' '[a-z]'
 
 #
 

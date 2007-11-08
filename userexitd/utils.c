@@ -88,7 +88,7 @@ char *get_attr(char *attrname,const char **attr) {
   int i;
   for(i=0;attr[i];i+=2) {
     if (!strcasecmp(attrname,attr[i])) {
-      return attr[i+1];
+      return (char*)attr[i+1];
     }
   } 
   return NULL; 
@@ -98,13 +98,14 @@ char *get_attr(char *attrname,const char **attr) {
 
 void logmsg(int level,char *fmt,...) {
   char lb[BUFSIZ];
+  int len;
   va_list ap;
   va_start(ap, fmt);
   if ((level&LOG_PRIMASK)<=config.ll) {
     if (config.foreground) {
-      fprintf(stderr,"%s: ",get_name(level & LOG_PRIMASK,"INFO",prioritynames));
-      vfprintf(stderr,fmt,ap);
-      fprintf(stderr,"\n");
+      len=snprintf(lb,sizeof(lb),"[%d] %s: ",getpid(),get_name(level & LOG_PRIMASK,"INFO",prioritynames));
+      vsnprintf(lb+len,sizeof(lb)-len,fmt,ap);
+      fprintf(stderr,"%s\n",lb);
     } else {
       vsnprintf(lb, sizeof(lb), fmt, ap);
       syslog(level | config.faccode,"%s",lb);

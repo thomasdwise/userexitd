@@ -23,18 +23,6 @@
 #define MAXMATCH 20
 #define MAXARGS 100
 
-typedef struct Config {
-  int sockdomain;
-  char *address;
-  char *pidfile;
-  char *sockpath;
-  int faccode;
-  int priocode;
-  char *ident;
-  int ll;
-  int foreground;
-  struct Rule *rules ;
-} config_t;
 
 enum DATATYPE {
   INT16_T,
@@ -134,6 +122,19 @@ typedef struct Rule {
   int disabled;
 
 } rule_t;
+
+typedef struct Config {
+  int sockdomain;
+  char *address;
+  char *pidfile;
+  char *sockpath;
+  int faccode;
+  int priocode;
+  char *ident;
+  int ll;
+  int foreground;
+  struct Rule *rules ;
+} config_t;
 
 void cleanup(int a);
 
