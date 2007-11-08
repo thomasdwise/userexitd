@@ -2,7 +2,7 @@
 # global options
 # TSM installation directory
 TSMDIR=/opt/tivoli/tsm/server/bin
-VERSION=0.4
+VERSION=0.5
 BUILDDIR=./userexitd-$(VERSION)
 #
 SYSTEM=$(shell uname -s|tr '[A-Z]' '[a-z]')

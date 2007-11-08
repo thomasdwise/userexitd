@@ -1,3 +1,8 @@
+Version 0.5
+
+Fixed bug with defunct processes on AIX
+
+
 Version 0.4
 
 Reloading of configuration on SIGHUP is now supported

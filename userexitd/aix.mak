@@ -1,7 +1,7 @@
 #
 # TSM installation directory
 TSMDIR=/usr/tivoli/tsm/server/bin
-VERSION=0.3
+VERSION=0.5
 BUILDDIR=./userexitd-$(VERSION)
 
 SYSTEM=aix
