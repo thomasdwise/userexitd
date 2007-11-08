@@ -583,9 +583,9 @@ config_t *read_config(char *filename)
 void reap(int a)
 {
     int status;
-
-    do {
-    } while (waitpid(-1, &status, WNOHANG) > 0);
+    pid_t pid;
+    while ((pid=waitpid(-1, &status, WNOHANG)) > 0) {
+    }
 }
 
 void cleanup(int a)
@@ -1022,9 +1022,9 @@ int daemon(int nochdir, int noclose)
 }
 #endif
 
-void install_signal_handlers()
+void install_signal_handlers(struct Config* cfg)
 {
-    struct sigaction act, oldact;
+    struct sigaction act;
 
     if (SIG_ERR == signal(SIGTERM, &cleanup)) {
         logmsg(LOG_ERR, "%s: %s", "signal", strerror(errno));
@@ -1034,24 +1034,24 @@ void install_signal_handlers()
         logmsg(LOG_ERR, "%s: %s", "signal", strerror(errno));
         err_exit("cannot install SIGINT signal handler");
     }
-    if (SIG_ERR == signal(SIGCHLD, &reap)) {
-        logmsg(LOG_ERR, "%s: %s", "signal", strerror(errno));
+    
+    bzero(&act, sizeof(act));
+    act.sa_flags = SA_RESTART;
+    sigemptyset(&act.sa_mask);
+
+    act.sa_handler=&reap;
+    if (0 > sigaction(SIGCHLD, &act, NULL)) {
+        logmsg(LOG_ERR, "%s: %s", "sigaction", strerror(errno));
         err_exit("cannot install SIGCHLD handler!");
     }
-    /*
-     * if (daemon) {
-     */
-    bzero(&act, sizeof(act));
-    act.sa_handler = &hup;
-    act.sa_flags = 0;
-    sigemptyset(&act.sa_mask);
-    if (0 > sigaction(SIGHUP, &act, &oldact)) {
-        logmsg(LOG_ERR, "%s: %s", "sigaction", strerror(errno));
-        err_exit("cannot install SIGHUP handler!");
+
+    if (!cfg->foreground) {
+	act.sa_handler=&hup;
+    	if (0 > sigaction(SIGHUP, &act, NULL)) {
+    	    	logmsg(LOG_ERR, "%s: %s", "sigaction", strerror(errno));
+       		err_exit("cannot install SIGHUP handler!");
+    	}
     }
-    /*
-     * }
-     */
 }
 
 void unlink_unix_socket(struct sockaddr *saddr)
@@ -1416,7 +1416,7 @@ int main(int argc, char **argv)
         fprintf(pd, "%u\n", (unsigned int) getpid());
         fclose(pd);
     }
-    install_signal_handlers();
+    install_signal_handlers(cfg);
     while (1) {
         rc = recv(unix_socket, (void *) &ebuf, sizeof(ebuf), 0);
         logmsg(LOG_DEBUG, "\ngot %d bytes!", rc);
