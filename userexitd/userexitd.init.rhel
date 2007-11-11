@@ -1,0 +1,69 @@
+#!/bin/bash
+#
+# userexitd     Starts userexitd.
+#
+#
+# chkconfig: 2345 85 15
+# description: Userexitd for TSM server daemon
+#
+# processname: userexitd
+# pidfile: /var/run/userexitd.pid
+
+# Source function library.
+. /etc/init.d/functions
+TSMDIR=/opt/tivoli/tsm/server/bin
+
+[ -f "$TSMDIR/userexitd" ] || exit 0
+
+start() {
+ 	echo -n $"Starting userexitd: "
+	daemon "$TSMDIR/userexitd" -c "$TSMDIR/userexitd.conf"
+	RETVAL=$?
+	[ $RETVAL -eq 0 ] && touch /var/lock/subsys/userexitd
+	echo
+	return $RETVAL
+}	
+stop() {
+	echo -n $"Shutting down userexitd: "
+	killproc userexitd
+	RETVAL=$?
+	[ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/userexitd
+	echo
+	return $RETVAL
+}
+rhstatus() {
+	status userexitd
+}
+restart() {
+	stop
+	start
+}	
+
+case "$1" in
+  start)
+  	start
+	;;
+  stop)
+  	stop
+	;;
+  status)
+  	rhstatus
+	;;
+  restart)
+  	restart
+	;;
+  reload)
+	echo -n "Signaling userexitd configuration reload: "
+  	killproc userexitd -HUP
+	echo
+	;;
+  condrestart)
+  	[ -f /var/lock/subsys/userexitd ] && restart || :
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status|restart|condrestart}"
+	exit 1
+esac
+
+exit $?
+
