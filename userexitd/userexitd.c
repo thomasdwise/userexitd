@@ -79,6 +79,7 @@ char *config_error = NULL;
 int debug = 0;
 char cbuf[40];
 volatile int reload_config = 0;
+char *logident=NULL;
 
 CODE sevcodes[] = {
     {"ADSM_SEV_INFO", ADSM_SEV_INFO},   /* Informational message.  */
@@ -151,10 +152,29 @@ void addArg(char *arg)
     for (i = 0; p[i] != NULL; i++);
     p[i] = xstrdup(arg);
     i++;
-    p = xrealloc(p, sizeof(char **) * (i + 1));
+    p = xrealloc(p, sizeof(char *) * (i + 1));
     p[i] = NULL;
     caction->ex.args = p;
     logmsg(LOG_DEBUG, "added argument '%s'", arg);
+}
+
+void addEnv(char *arg)
+{
+    int i;
+    char **p = caction->ca.envs;
+    
+    if (NULL == p) {
+	    p = xmalloc(sizeof(char *));
+	    p[0]=NULL;
+    }
+    for (i = 0; p[i] != NULL; i++);
+
+    p[i] = xstrdup(arg);
+    i++;
+    p = xrealloc(p, sizeof(char *) * (i + 1));
+    p[i] = NULL;
+    caction->ca.envs = p;
+    logmsg(LOG_DEBUG, "added enviroment variable '%s'", arg);
 }
 
 void addCounter(const char **attr)
@@ -245,9 +265,13 @@ void addFile(const char **attr)
     if (NULL != get_attr("dup", attr)) {
         (*fp)->fdup = getfdnum(get_attr("dup", attr));
     }
+    
+    if (NULL != get_attr("mandatory", attr)) {
+        (*fp)->mandatory = !strcasecmp(get_attr("mandatory", attr),"yes");
+    }
 
-    logmsg(LOG_DEBUG, "Added file fd=%d mode='%s' dup=%d filename='%s'",
-           (*fp)->fd, (*fp)->mode, (*fp)->fdup, ((*fp)->filename) ? ((*fp)->filename) : "nul");
+    logmsg(LOG_DEBUG, "Added file fd=%d mode='%s' dup=%d filename='%s' mandatory=%s",
+           (*fp)->fd, (*fp)->mode, (*fp)->fdup, ((*fp)->filename) ? ((*fp)->filename) : "nul", (*fp)->mandatory?"yes":"no");
     ciof = *fp;
 }
 
@@ -278,6 +302,7 @@ void addAction(enum A_TYPE a_type, const char **attr)
         ((*ap)->ex.args)[0] = xstrdup(get_attr("image", attr));
         ((*ap)->ex.args)[1] = 0;
         (*ap)->ex.iofiles = NULL;
+        (*ap)->ex.envs = NULL;
     } else if (a_type == A_SYSLOG) {
         (*ap)->log.facility = get_value(get_attr("facility", attr), config.faccode, facilitynames);
         (*ap)->log.priority = get_value(get_attr("priority", attr), config.priocode, prioritynames);
@@ -285,6 +310,7 @@ void addAction(enum A_TYPE a_type, const char **attr)
     } else if (a_type == A_SYSTEM) {
         (*ap)->sys.text = NULL;
         (*ap)->sys.cmdline = NULL;
+        (*ap)->sys.envs = NULL;
     }
     logmsg(LOG_DEBUG, "added action type '%s'", (a_type == A_EXEC) ? "exec" : (a_type == A_SYSLOG ? "syslog" : "system"));
     caction = *ap;
@@ -337,12 +363,6 @@ void addPattern(const char **attr)
 void addRule(const char **attr)
 {
     struct Rule **rp = &config.rules;
-    char *tmp;
-
-    tmp = get_attr("disabled", attr);
-    if (tmp && (!strcasecmp(tmp, "yes"))) {
-        return;
-    }
 
     if (!get_attr("name", attr)) {
         config_error = "rule must have a name attribute defined!";
@@ -359,6 +379,7 @@ void addRule(const char **attr)
         rp = &((*rp)->next);
     }
     (*rp) = xmalloc(sizeof(struct Rule));
+    bzero(*rp, sizeof(struct Rule));
 
     logmsg(LOG_DEBUG, "added rule %s", get_attr("name", attr));
     (*rp)->name = xstrdup(get_attr("name", attr));
@@ -369,6 +390,10 @@ void addRule(const char **attr)
     if (get_attr("final", attr)
         && (!strcasecmp(get_attr("final", attr), "yes"))) {
         (*rp)->final = 1;
+    }
+    if (get_attr("disabled", attr) &&  
+    	!strcasecmp(get_attr("disabled", attr), "yes")) {
+        (*rp)->disabled = 1;
     }
     crule = *rp;
 }
@@ -416,6 +441,8 @@ void XMLCALL handle_start(void *data, const char *el, const char **attr)
         addAction(A_SYSTEM, attr);
     } else if (!strcasecmp(el, "arg")) {
         cdata[0] = 0;
+    } else if (!strcasecmp(el, "env")) {
+        cdata[0] = 0;
     } else if (!strcasecmp(el, "counter")) {
         cdata[0] = 0;
         addCounter(attr);
@@ -461,6 +488,10 @@ void XMLCALL handle_end(void *data, const char *el)
             addArg(cdata);
         }
         // carg=0;
+    } else if (!strcasecmp(el, "env")) {
+        if (caction && (caction->ca.a_type == A_EXEC || caction->ca.a_type == A_SYSTEM)) {
+            addEnv(cdata);
+        }
     } else if (!strcasecmp(el, "counter")) {
         if (ccounter) {
             ccounter->str = xstrdup(cdata);
@@ -588,7 +619,7 @@ void reap(int a)
     }
 }
 
-void cleanup(int a)
+void cleanup(int signum)
 {
     if (config.pidfile && strlen(config.pidfile)) {
         unlink(config.pidfile);
@@ -599,7 +630,9 @@ void cleanup(int a)
     if (PF_UNIX == config.sockdomain && config.sockpath) {
         unlink(config.sockpath);
     }
-    exit(0);
+    if (signum > 0 ) {
+    	exit(0);
+    }
 }
 
 void hup(int a)
@@ -728,30 +761,53 @@ char *do_subst(char *str, char *matched)
     return sbuf;
 }
 
+char **do_substs(char** strings,char *matched,char *name) {
+	int strnum = 0;
+	int i;
+	char **substs = NULL;
+    	char *sbuf;
+
+	if (NULL == strings) {
+		return NULL;
+	}
+	
+	for (strnum = 0; strings[strnum]; strnum++);
+	
+	substs=xmalloc((1 + strnum) * sizeof(char *));
+	bzero(substs, (1 + strnum) * sizeof(char *));
+	
+	for (i = 0; strings[i]; i++) {
+		sbuf = do_subst(strings[i], matched);
+		substs[i] = xstrdup(sbuf);
+		xfree(sbuf);
+	        logmsg(LOG_DEBUG, " %s[%d]: '%s'", name, i, substs[i]);
+        }
+	return substs;
+}
+
 void do_exec(union Action *ap, struct Rule *rp, elEventRecvData * buf, char *matched)
 {
-    char *args[MAXARGS];
-
-    char *sbuf;
+    char **args = NULL;
+    char **envs = NULL;
     int i, pip[2], om = open_max();
     struct Iof *fp;
     FILE *tfd;
+    pid_t cpid;
+    char *sbuf;
 
-    if (0 == fork()) {
+    if (0 == (cpid = fork())) {
         logmsg(LOG_DEBUG, "running exec action '%s'", ap->ex.image);
         for (i = 3; i < om; i++) {
             fcntl(i, F_SETFD, FD_CLOEXEC);
         }
-        bzero(args, sizeof(args));
-        for (i = 0; (i < (MAXARGS - 1)) && ap->ex.args[i]; i++) {
 
-            sbuf = do_subst(ap->ex.args[i], matched);
-            args[i] = xstrdup(sbuf);
-            xfree(sbuf);
-        }
-        for (i = 0; args[i]; i++) {
-            logmsg(LOG_DEBUG, " arg%d=%s", i, args[i]);
-        }
+	args = do_substs(ap->ex.args,matched,"arg");
+
+	envs = do_substs(ap->ex.envs,matched,"env");
+	for (i=0; envs && envs[i]; i++) {
+		putenv(envs[i]);
+	}
+	
         fp = ap->ex.iofiles;
         if (NULL == fp) {
             logmsg(LOG_DEBUG, "no descriptors redirected");
@@ -764,17 +820,20 @@ void do_exec(union Action *ap, struct Rule *rp, elEventRecvData * buf, char *mat
                     close(fp->fd);
                     if (-1 == dup2(fileno(tfd), fp->fd)) {
                         logmsg(LOG_ERR, "cannot dup '%d': %s", fileno(tfd), strerror(errno));
+		    	if (fp->mandatory) break;
                     }
                     fclose(tfd);
                     fcntl(fp->fd, F_SETFD, 0);
                 } else {
                     logmsg(LOG_ERR, "cannot open '%s': %s", fp->filename, strerror(errno));
+		    if (fp->mandatory) break;
                 }
             } else if (((int) (fp->fdup)) >= 0) {
                 logmsg(LOG_DEBUG, "to descriptor %d", fp->fdup);
                 close(fp->fd);
                 if (-1 == dup2(fp->fdup, fp->fd)) {
                     logmsg(LOG_ERR, "dup2: %s", strerror(errno));
+		    if (fp->mandatory) break;
                 }
                 fcntl(fp->fd, F_SETFD, 0);
             } else if ((!strcmp(fp->mode, "r")) && fp->text) {
@@ -786,9 +845,10 @@ void do_exec(union Action *ap, struct Rule *rp, elEventRecvData * buf, char *mat
                     close(fp->fd);
                     if (-1 == dup2(pip[0], fp->fd)) {
                         logmsg(LOG_ERR, "dup2: %s", strerror(errno));
+		        if (fp->mandatory) break;
                     } else {
                         close(pip[0]);
-                        if (0 == fork()) {
+                        if (0 == (cpid = fork())) {
                             for (i = 0; i < om; i++) {
                                 if (i != pip[1])
                                     close(i);
@@ -796,24 +856,38 @@ void do_exec(union Action *ap, struct Rule *rp, elEventRecvData * buf, char *mat
                             write(pip[1], sbuf, strlen(sbuf));
                             close(pip[1]);
                             exit(0);
-                        }
+                        } else if (-1 == cpid) {
+			    logmsg(LOG_ERR, "failed to redirect input to pipe: %s: %s", "fork", strerror(errno));
+			    if (fp->mandatory) break;
+			}
+
                         close(pip[1]);
                         fcntl(fp->fd, F_SETFD, 0);
                     }
                 } else {
                     logmsg(LOG_ERR, "pipe: %s", strerror(errno));
+		    if (fp->mandatory) break;
                 }
                 xfree(sbuf);
             } else {
                 logmsg(LOG_ERR, "invalid redirection!");
+		if (fp->mandatory) break;
             }
             fp = fp->next;
         }
-        logmsg(LOG_INFO, "doing exec '%s'", ap->ex.image);
-        execv(ap->ex.image, args);
-        logmsg(LOG_ERR, "%s: %s", "execv", strerror(errno));
+	if (NULL != fp) {
+        	logmsg(LOG_ERR, "exec action failed because one or more mandatory redirections failed");
+		
+	} else {
+        	logmsg(LOG_DEBUG, "doing exec '%s'", ap->ex.image);
+        	execv(ap->ex.image, args);
+        	logmsg(LOG_ERR, "exec action failed: %s: %s", "execv", strerror(errno));
+	}
         exit(0);
+    } else if (-1 == cpid) {
+	logmsg(LOG_ERR, "failed to run exec action: %s: %s", "fork", strerror(errno));
     }
+
 }
 
 void do_syslogmsg(union Action *ap, struct Rule *rp, elEventRecvData * buf, char *matched)
@@ -832,10 +906,21 @@ void do_system(union Action *ap, struct Rule *rp, elEventRecvData * buf, char *m
     char *sbuf;
     int rc;
     FILE *wfd;
+    pid_t cpid;
+    int i;
+    char **envs;
 
     logmsg(LOG_DEBUG, "doing system '%s'", ap->sys.cmdline);
-    if (fork()) {
+    if (0 != (cpid=fork())) {
+	if (-1 == cpid) {
+	    logmsg(LOG_ERR, "failed to run system action: %s: %s", "fork", strerror(errno));
+	}
         return;
+    }
+
+    envs = do_substs(ap->sys.envs,matched,"env");
+    for (i=0; envs && envs[i]; i++) {
+        putenv(envs[i]);
     }
 
     sbuf = do_subst(ap->sys.cmdline, matched);
@@ -857,7 +942,7 @@ void do_system(union Action *ap, struct Rule *rp, elEventRecvData * buf, char *m
     if (-1 == rc) {
         logmsg(LOG_ERR, "system: %s", strerror(errno));
     } else if (WEXITSTATUS(rc)) {
-        logmsg(LOG_WARNING, "non zero exit status: %d", WEXITSTATUS(rc));
+        logmsg(LOG_WARNING, "system: non zero exit status: %d", WEXITSTATUS(rc));
     } else {
         logmsg(LOG_INFO, "system: success");
     }
@@ -982,7 +1067,7 @@ void handle_packet(elEventRecvData * buf)
     do {
         char *matched;
 
-        if (NULL != (matched = test_rule(rp, buf))) {
+        if ((0 == rp->disabled ) && (NULL != (matched = test_rule(rp, buf)))) {
             logmsg(LOG_INFO, "rule '%s' matches", rp->name);
             do_actions(rp, buf, matched);
             if (rp->final) {
@@ -992,7 +1077,6 @@ void handle_packet(elEventRecvData * buf)
         }
     } while (NULL != (rp = rp->next));
     logmsg(LOG_DEBUG, "end of matching");
-    exit(0);
 }
 
 #ifndef HAVE_DAEMON
@@ -1047,6 +1131,7 @@ void install_signal_handlers(struct Config* cfg)
 
     if (!cfg->foreground) {
 	act.sa_handler=&hup;
+	act.sa_flags &=~SA_RESTART;
     	if (0 > sigaction(SIGHUP, &act, NULL)) {
     	    	logmsg(LOG_ERR, "%s: %s", "sigaction", strerror(errno));
        		err_exit("cannot install SIGHUP handler!");
@@ -1316,6 +1401,14 @@ struct Config *do_reload_config(char *cfgfile)
                 goto loaderr;
             }
         }
+	if (strcmp(config.ident,oldconfig.ident) || config.faccode!=oldconfig.faccode) {
+		if (strcmp(config.ident,oldconfig.ident)) {
+			xfree(logident);
+			logident=xstrdup(config.ident);
+		}
+		closelog();
+		openlog(logident, LOG_NDELAY, config.faccode);
+	}
         logmsg(LOG_INFO, "configuration info reloaded", cfgfile);
         free_config(&oldconfig);
     } else {
@@ -1340,6 +1433,9 @@ int main(int argc, char **argv)
     char *opts = "vhc:fd";
     struct Config *cfg;
     int checkconf = 0;
+    pid_t cpid;
+    int cstat;
+    unsigned int packno = 0;
 
     struct sockaddr_un my_addr_un;
     struct sockaddr_in my_addr_in;
@@ -1398,7 +1494,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "configuration seems to be OK!\n");
         exit(0);
     }
-    openlog(cfg->ident, LOG_NDELAY, cfg->faccode);
+
+    logident=xstrdup(cfg->ident);
+    openlog(logident, LOG_NDELAY, cfg->faccode);
 
     if (NULL == (pd = create_pidfile(cfg))) {
         if (cfg->pidfile && strlen(cfg->pidfile)) {
@@ -1419,7 +1517,8 @@ int main(int argc, char **argv)
     install_signal_handlers(cfg);
     while (1) {
         rc = recv(unix_socket, (void *) &ebuf, sizeof(ebuf), 0);
-        logmsg(LOG_DEBUG, "\ngot %d bytes!", rc);
+	packno++;
+        logmsg(LOG_DEBUG, "got packet %u: %d bytes!", packno, rc);
         if (-1 == rc) {
             if (EAGAIN == errno) {
                 continue;
@@ -1437,10 +1536,23 @@ int main(int argc, char **argv)
         if (reload_config) {
             do_reload_config(configfile);
         }
-        if (0 == fork()) {
+        if (0 == (cpid=fork())) {
+	    signal(SIGTERM, SIG_DFL);
+	    signal(SIGHUP, SIG_DFL);
+	    signal(SIGINT, SIG_DFL);
+	    signal(SIGCHLD, SIG_DFL);
+            logmsg(LOG_DEBUG, "handling packet %u",packno);
             handle_packet(&ebuf);
+	    while (-1 != (cpid=wait(&cstat)) || EINTR == errno) {
+		if (-1 != cpid) {
+                	logmsg(LOG_DEBUG, "child process %d exited with status %d",cpid,cstat);
+		}
+	    }
+            logmsg(LOG_DEBUG, "finished handling packet %u:", packno);
             exit(0);
-        }
+        } else if (-1 == cpid) {
+                logmsg(LOG_ERR, "failed to handle packet %u: %s: %s", packno, "fork", strerror(errno));
+	}
     }
     exit(0);
 }

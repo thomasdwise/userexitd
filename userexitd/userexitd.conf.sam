@@ -20,16 +20,18 @@
 (event|eventNum|sevCode|applType|sessId|version|eventType|timeStamp|serverName|nodeName|commMethod|ownerName|hlAddress|llAddress|schedName|domainName) #REQUIRED>
 <!ELEMENT pattern       (#PCDATA)>
 <!ELEMENT arg           (#PCDATA)>
+<!ELEMENT env           (#PCDATA)>
 <!ATTLIST file          fd              CDATA                   #REQUIRED>
 <!ATTLIST file          mode            CDATA                   #REQUIRED>
 <!ATTLIST file          filename        CDATA                   #IMPLIED>
+<!ATTLIST file          mandatory       CDATA                   #IMPLIED>
 <!ATTLIST file          dup             CDATA                   #IMPLIED>
 <!ELEMENT file          (#PCDATA)>
 <!ATTLIST exec          image           CDATA                   #REQUIRED>
-<!ELEMENT exec          (arg*,file*)>
+<!ELEMENT exec          (arg*,env*,file*)>
 <!ELEMENT command	(#PCDATA)>
 <!ELEMENT input 	(#PCDATA)>
-<!ELEMENT system	(command,input?)>
+<!ELEMENT system	(command,env*,input?)>
 <!ATTLIST rule          name            CDATA                   #REQUIRED>
 <!ATTLIST rule          disabled        (yes|no)                #IMPLIED>
 <!ATTLIST rule          final           (yes|no)                #IMPLIED>
@@ -124,22 +126,35 @@
 	
 
 	<exec> action executes the program, specified in it's "image" attribute. 
+
 	You can specify arguments using <arg> subelement (with variable substitution). 
 
+	You can modify program environment using <env> subelement (with variable substitution). 
+
 	You can redirect program's input, output and error streams using <file> subelement. 
+	
 	It's "fd" attribute sets number of file descriptor to redirect, it's value may be 
 	numeric or one of "stdin", "stdout" or "stderr". 
-	"mode" attribute defines how to open this file, may be one of "r", "r+", "w", "w+", "a", "a+" 
+	
+	It's "mode" attribute defines how to open this file, may be one of "r", "r+", "w", "w+", "a", "a+" 
 	(see fopen(3) for details). 
-	"dup" attribute allows to duplicate existing file descriptor, it's value may be
+	
+	It's "dup" attribute allows to duplicate existing file descriptor, it's value may be
         numeric or one of "stdin", "stdout" or "stderr"
+	
 	If file is opened for reading (mode="r") and no "filename" nor dup "attributes" are set,
-	the contents of <file> element are redirected (with variable substitution)
+	the contents of <file> element are redirected (with variable substitution).
+	
+	It's "mandatory" attribute makes this redirection mandatory for an exec action to run.
+	If userexitd fails for some reason to perform one or more of mandatory redirections,
+	the action will be skipped. By default the attribute's value is "no".
 
 	<system> action uses the system shell (/bin/sh) to execute contents
 	of it's command subelement (with variable substitution). If <input> element 
 	is specified, the command uses contents of  <input> element (with variable
 	substitution) as it's standard input. 
+
+	You can modify program environment using <env> subelement (with variable substitution). 
 	
 	SECURITY WARNING
 	
@@ -155,7 +170,7 @@
 	the system log. Standard syslog facilities and priorities
         are used (see syslog.conf(5) for details)
 
-	Variable substitution works for contents of <arg>, <command>, <input>, <file> and
+	Variable substitution works for contents of <arg>, <command>, <input>, <file>, <env> and
 	<syslog> elements. Variables may be referenced using %varName% notation. %% inserts
 	a single %. The following variables are supported:
 		%0%	    -   last matched expression
@@ -189,6 +204,8 @@ Message from TSM server, severity %sevCode%
         <exec image="/usr/bin/mailx">
                 <arg>-s</arg><arg>MEDIA REQUEST for %3%</arg>
                 <arg>operator</arg>
+		<!-- use custom mail settings for tsm generated mail -->
+		<env>MAILRC=/etc/mail/mailx.tsm.rc</env>
 		<file fd="0" mode="r">
 
 TSM media request:
@@ -287,7 +304,7 @@ TSM information:
 
 <!-- run script to zip and replicate TSM database backups -->
 <!-- stdout and stderr redirected to logfile              -->
-<rule name="DBBackupVolumeClosed" disabled="no">
+<rule name="DBBackupVolumeClosed" disabled="yes">
    <pattern type="event">^ANR0515I Process ([0-9]+) closed volume ((/tsm1/VTAPE_DB_INC|/tsm1/VTAPE_DB_FULL)/[^ ]+)</pattern>
     <exec image="/usr/local/sbin/backuptsmdb.sh">
 	<file fd="stderr" mode="a" filename="/var/log/backuptsmdb.log"/>

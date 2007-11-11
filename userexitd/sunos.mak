@@ -12,6 +12,9 @@ MACHINE:sh=uname -p|tr '[A-Z]' '[a-z]'
 
 CC=gcc
 CFLAGS=-g -D_REENTRANT -DSOLARIS -O0 -Wall 
+# use the following to compile 64 bit binaries with the Sun's compiler
+# (hint by Uday Bidikar)
+#CFLAGS=-m64 -xcode=abs64
 LD=/usr/ccs/bin/ld
 LDFLAGS=-lsocket -lnsl -lresolv
 SOLDFLAGS=-dy -G  -lc -lsocket -lnsl -lresolv

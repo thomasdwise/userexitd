@@ -21,7 +21,6 @@
   TODO: get rid of fixed limits
 */
 #define MAXMATCH 20
-#define MAXARGS 100
 
 
 enum DATATYPE {
@@ -55,6 +54,7 @@ enum A_TYPE {
 typedef struct Ca {
   enum A_TYPE a_type;
   union Action *next;
+  char **envs;
 } ca_t;
 
 typedef struct Iof {
@@ -64,12 +64,14 @@ typedef struct Iof {
   char *filename;
   char *text;
   signed int fdup;
+  int mandatory;
 } iof_t;
 
 
 typedef struct Exec {
   enum A_TYPE a_type;
   union Action *next;
+  char **envs;
   char *image;
   char **args;
   iof_t  *iofiles;
@@ -78,6 +80,7 @@ typedef struct Exec {
 typedef struct System {
   enum A_TYPE a_type;
   union Action *next;
+  char **envs;
   char *cmdline;
   char *text;
 } system_t;

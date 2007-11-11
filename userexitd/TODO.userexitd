@@ -1,4 +1,4 @@
-TODO list for userexitd 0.4 
+TODO list for userexitd 0.5
 (in no specific order)
 
 *Test with other TSM versions but 5.2, 5.3 and 4.2
@@ -12,7 +12,6 @@ TODO list for userexitd 0.4
 *chroot and chdir for subprocesses
 *allow changing of uid, gid and umask for subprocesses
 *allow setting access mode, uid and gid for listening unix socket 
-*allow setting of environment variables for subprocesses
 *acls for udp socket (libwrap?)
 *Automate installation of user exit
 *Port to MS Windows (maybe)

@@ -100,8 +100,8 @@
 	...
 	[skipped lots of messages]
 	...
-	debug: pidfile='/var/run/userexitd.pid'
-	debug: sockpath='/var/run/userexitd.sock'
+	[15650] debug: pidfile='/var/run/userexitd.pid'
+	[15650] debug: sockpath='/var/run/userexitd.sock'
 	
 	it should print lots of debugging info and stop, waiting for a packet 
 	from the shared library
@@ -136,10 +136,12 @@
 	see userexitd printing debug messages as it processes events.
 
 	...
-	debug:
-	got 3404 bytes!	
-	debug: packet version: 2
-	debug: eventNum: 2017
+	[15650] got packet 1: 3404 bytes!	
+	[15684] debug: handling packet 1
+	[15684] debug: packet version: 2
+	[15684] debug: eventNum: 2017
+	...
+	[15684] debug: finished handling packet 1:
 	...
 
 2.7	Write and debug your rules in the configuration file (see commments in 
@@ -151,6 +153,19 @@
 2.9	Configure automatic startup of userexitd without the debug option (-d)
 	(see your operating system administrator's guide). 
 	Probably it should start before your TSM server. 
+
+	On AIX you may do the following to have userexitd start automatically on reboot
+	(hint by Daniel J. Clark)
+
+	mkitab -i rctcpip "userexitd:2:once:/usr/tivoli/tsm/server/bin/userexitd >/dev/console 2>&1"
+
+	On Redhat Enterprise Linux (or a compatible Linux distribution) you may use the provided 
+	userexitd.init.rhel startup script:
+
+		# copy the script tu /etc/init.d
+		cp userexitd.init.rhel /etc/init.d/userexitd.init
+		# add new service
+		/sbin/chkconfig --add userexitd.init
 
 
 3. COMMAND LINE ARGUMENTS FOR USEREXITD
